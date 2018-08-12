@@ -1,16 +1,26 @@
+--[[
+    effects_api mod for Minetest - Library to add temporary effects on players.
+    (c) Pierre-Yves Rollo
 
--- Attention, ce sont des lasting_effects, seulement des effets dans le temps.
--- Les autres effets devront être gérés ponctuellement
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+--]]
 
 -- Mod internal data
 --------------------
 
 -- Name of the players meta in which is saved effects data
 local meta_key = "effects_api:active_effects"
-
--- Registry
-local player_impact_types = {}
 
 -- Living data
 local active_player_effects = {}
@@ -20,34 +30,11 @@ local active_player_impacts = {}
 --local active_mob_effects = {}
 --local active_mob_impacts = {}
 
--- Impact helpers
------------------
+-- Impact registry
+------------------
 
---- get_impact_mult
--- Computes multiplication of all effects param with intensity. To be used in
--- impacts writing.
--- @params: Impact params array
--- @key: Key of the param to multiply
-function effects_api.get_impact_mult(params, key)
-	local result = 1.0
-	for _, p in pairs(params) do
-		result = result * (1+((p[key] or 1)-1)*(p.intensity or 0))
-	end
-	return result
-end
-
---- get_impact_sum
--- Computes sum of all effects param with intensity. To be used in impacts
--- writing.
--- @params: Impact params array
--- @key: Key of the param to sum
-function effects_api.get_impact_sum(params, key)
-	local result = 0.0
-	for _, p in pairs(params) do
-		result = result + (p[key] or 0)*(p.intensity or 0)
-	end
-	return result
-end
+-- Registry
+local player_impact_types = {}
 
 --- register_player_impact_type
 -- Registers a player impact type.
@@ -125,6 +112,9 @@ local function link_player_effect_impacts(effect)
 			if impact then
 				-- Link effect params to impact params
 				table.insert(impact.params, params)
+			else
+				-- Impact not existing, remove it to avoid further problems
+				effect.impacts[type_name] = nil
 			end
 		end
 	end
@@ -293,8 +283,6 @@ function effects_api.players_effects_loop(dtime)
 
 	-- Effects loops (players)
 	for player_name, effects in pairs(active_player_effects) do
-		--player = ...get_player_by_name(pname)
-		-- TODO: Joueurs deconnectés... --> Sauvegarde des effets
 
 		-- Effects loops (effects)
 		for index, effect in ipairs(effects) do
@@ -404,6 +392,8 @@ function effects_api.load_player_data(player)
 			end
 		end
 	end
+--	print("Effects on player "..player_name..":")
+--	print(dump(active_player_effects[player_name]))
 end
 
 function effects_api.save_all_players_data()

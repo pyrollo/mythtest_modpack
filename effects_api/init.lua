@@ -1,3 +1,21 @@
+--[[
+    effects_api mod for Minetest - Library to add temporary effects on players.
+    (c) Pierre-Yves Rollo
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+--]]
+
 effects_api = {}
 effects_api.name = minetest.get_current_modname()
 effects_api.path = minetest.get_modpath(effects_api.name)
@@ -9,6 +27,7 @@ local save_interval = 1
 
 dofile(effects_api.path.."/effects_api.lua")
 dofile(effects_api.path.."/wield_hack.lua")
+dofile(effects_api.path.."/impact_helpers.lua")
 
 -- Main loop
 minetest.register_globalstep(function(dtime)
