@@ -25,8 +25,8 @@ effects_api.path = minetest.get_modpath(effects_api.name)
 -- TODO:Move into a mod settings
 local save_interval = 1 
 
-dofile(effects_api.path.."/effects_api.lua")
-dofile(effects_api.path.."/wield_hack.lua")
+dofile(effects_api.path.."/api.lua")
+dofile(effects_api.path.."/hacks.lua")
 dofile(effects_api.path.."/impact_helpers.lua")
 
 -- Main loop

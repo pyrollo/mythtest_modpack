@@ -25,6 +25,8 @@ local meta_key = "effects_api:active_effects"
 -- Living data
 local active_player_effects = {}
 local active_player_impacts = {}
+local active_player_effets_ids = {}
+
 --local active_world_effects = {}
 --local active_world_impacts = {}
 --local active_mob_effects = {}
@@ -214,7 +216,7 @@ local function is_player_equiped(player_name, item_name)
 	return false -- Item not found in equipment
 end
 
--- Tell if player is near a certain node
+-- Tell if player is near a certain position -- not actually used
 local function player_in_location(player_name, location)
 	local player = minetest.get_player_by_name(player_name)
 
@@ -230,14 +232,34 @@ local function player_in_location(player_name, location)
 		return false
 	end
 
-	if location.node_name then
-		local node = minetest.get_node(location.pos)
-		if node.name ~= location.pos then
-			return false
-		end
-	end
-
 	return true
+end
+
+-- Check nearby nodes. 
+-- This condition is not in the effect definition, it is created when needed
+-- for effects associated with nodes placed on the map.
+local function still_nearby_nodes(player_name, near_node)
+    -- No check, near_nodes should have radius, node_name and active_pos members
+
+	local player = minetest.get_player_by_name(player_name)
+	local player_pos = player:get_pos()
+    local radius2 = near_node.radius * near_node.radius
+
+    for hash, _ in pairs(near_node.active_pos) do
+        pos = minetest.get_position_from_hash(hash)
+        if (pos.x - player_pos.x) * (pos.x - player_pos.x) +
+           (pos.y - player_pos.y) * (pos.x - player_pos.y) +
+           (pos.z - player_pos.z) * (pos.x - player_pos.z) > radius2
+        then
+            near_node.active_pos[hash] = nil
+        else
+            if minetest.get_node(pos).name ~= near_node.name then
+                near_node.active_pos[hash] = nil
+            end
+        end
+    end
+
+    return next(near_node.active_pos, nil) ~= nil
 end
 
 -- Check if conditions on effect are all ok
@@ -266,6 +288,13 @@ local function verify_player_effect_conditions(effect)
 		                           effect.conditions.location) then
 		return false
 	end
+
+    -- Check nearby nodes
+    if effect.conditions.near_node
+        and not still_nearby_nodes(effect.player_name,
+                                   effect.conditions.near_node) then
+        return false
+    end
 
 	return true
 end
@@ -352,6 +381,42 @@ function effects_api.players_impacts_loop(dtime)
 	end
 end
 
+-- Effects by ID
+----------------
+
+local function set_effect_for_id(player_name, effect_id, effect)
+    if effect_id == nil then
+        return true -- No id, no problem
+    end
+
+    if active_player_effects_ids[player_name] == nil then
+        active_player_effects_ids[player_name] = {}
+        setmetatable(active_player_effets_ids[player_name], { __mode = 'v' })
+    end
+    
+    if active_player_effects_ids[player_name][effect_id] then
+        return false
+    else
+        active_player_effects_ids[player_name][effect_id] = effect
+        return true
+    end
+end
+
+--- get_effect_by_id
+-- Returns an effect with a given id
+-- @param player_name Name of the player affected
+-- @param effect_id Id of the effect
+-- @return effect found or nil if none
+function effects_api.get_effect_by_id(player_name, effect_id)
+    if effect_id and active_player_effects_ids[player_name] and
+        active_player_effects_ids[player_name][effect_id] 
+    then
+        return active_player_effects_ids[player_name][effect_id]
+    else
+        return nil
+    end
+end
+
 -- Player effects persistance
 -----------------------------
 
@@ -381,16 +446,22 @@ function effects_api.load_player_data(player)
 		local data = player:get_attribute(meta_key)
 		if data == "" then
 			active_player_effects[player_name] = nil
+			active_player_effects_ids[player_name] = nil
 		else
 			active_player_effects[player_name] = minetest.deserialize(data)
 
 			if active_player_effects[player_name] then
 				-- Link active effects to impacts
-				for _, effect in ipairs(active_player_effects[player_name]) do
-					link_player_effect_impacts(effect)
+				for index, effect in ipairs(active_player_effects[player_name]) do
+                    if not set_effect_for_id(player_name, effect.id, effect) then
+                        minetest.log('error', '[effects_api] Loading effects for player "'..
+                        player_name..'", found duplicate ID "'..effect.id..'".')
+                        -- Not quite satisfying. What to do in that case ?? Should remove duplicate ?
+                    end
+                    link_player_effect_impacts(effect)
 				end
 			end
-		end
+        end
 	end
 --	print("Effects on player "..player_name..":")
 --	print(dump(active_player_effects[player_name]))
@@ -416,6 +487,7 @@ function effects_api.forget_player(player)
 	if active_player_effects[player_name] then
 		active_player_effects[player_name] = nil
 		active_player_impacts[player_name] = nil
+        active_player_effects_ids[player_name] = nil
 	end
 end
 
@@ -426,6 +498,7 @@ end
 -- Affects a player with a lasting effect
 -- @param player_name Name of the player to be affected
 -- @param effect_definition Definition of the effect
+-- @return effect affecting the player
 -- effect_definition = {
 --	groups = {},  -- Permet d'agir de l'extérieur sur l'effet
 --	impacts = {}, -- Impacts effect has (pair of impact name / impact parameters
@@ -433,11 +506,12 @@ end
 --	fall = x,     -- Time it takes to fall, after end to no intensity
 --	conditions = {
 --	  duration = x, -- Duration of maximum intensity in seconds (default always)
---	  equiped_with = itemstring, -- Effects falls if not equiped with this item
---                                  anymore (armor or wielding)
 --	  location = {}, -- location definition where the effect is active (default:
 --                      everywhere)
+--	  equiped_with = itemstring, -- Effects falls if not equiped with this item
+--                                  anymore (armor or wielding)
 --	}
+--  distance = x, -- In case of effect associated to a node, indicates distance of action
 --	stopatdeath = true, --?
 --}
 --
@@ -449,7 +523,16 @@ end
 --	node_name = , -- (optional) Node name if any (if node is not corresponding, effect stops)
 --}
 
+
 function effects_api.affect_player(player_name, effect_definition)
+    -- Verify id not in use if any
+    if effect_definition.id and
+       effects_api.get_effect_by_id(effect_definition.id) then
+		minetest.log('error', '[effects_api] Effect ID "'..effect_definition.id..
+            '" already exists for player "'..player_name..'".')
+        return nil
+    end
+
 	if active_player_effects[player_name] == nil then
 		active_player_effects[player_name] = {}
 	end
@@ -461,10 +544,19 @@ function effects_api.affect_player(player_name, effect_definition)
 	effect.player_name = player_name
 	effect.elapsed_time = 0
 
+    -- Register by id if any
+    set_effect_for_id(player_name, effect.id, effect)
+
 	-- Create / link impacts
 	link_player_effect_impacts(effect)
+
+    return effect
 end
 
+--- dump_effects
+-- Dumps all effects affecting a player into a string
+-- @param player_name Name of the player
+-- @returns String describing effects
 function effects_api.dump_effects(player_name)
 	local str = ""
 	if player_name then
