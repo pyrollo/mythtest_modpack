@@ -25,7 +25,7 @@ local meta_key = "effects_api:active_effects"
 -- Living data
 local active_player_effects = {}
 local active_player_impacts = {}
-local active_player_effets_ids = {}
+local active_player_effects_ids = {}
 
 --local active_world_effects = {}
 --local active_world_impacts = {}
@@ -176,13 +176,19 @@ local function effect_phase (effect, dtime)
 	end
 end
 
--- Turns effect off, with optional fall phase
-local function effect_off(effect)
+-- Stops effect, with optional fall phase
+local function effect_stop(effect)
 	if effect.phase == "raise" or effect.phase == "still" then
 		effect.phase = "fall"
 	end
 end
 
+-- Restarts effect if it's in fall or end phase
+function effects_api.effect_restart(effect)
+	if effect.phase == "fall" or effect.phase == "end" then
+		effect.phase = "raise"
+	end
+end
 -- Effect conditions check
 --------------------------
 
@@ -244,16 +250,20 @@ local function still_nearby_nodes(player_name, near_node)
 	local player = minetest.get_player_by_name(player_name)
 	local player_pos = player:get_pos()
     local radius2 = near_node.radius * near_node.radius
-
+	local pos
     for hash, _ in pairs(near_node.active_pos) do
         pos = minetest.get_position_from_hash(hash)
+--        print(minetest.pos_to_string(pos))
+		-- TODO:ensure radius computation is the same that get_objects_in_radius
         if (pos.x - player_pos.x) * (pos.x - player_pos.x) +
-           (pos.y - player_pos.y) * (pos.x - player_pos.y) +
-           (pos.z - player_pos.z) * (pos.x - player_pos.z) > radius2
+           (pos.y - player_pos.y) * (pos.y - player_pos.y) +
+           (pos.z - player_pos.z) * (pos.z - player_pos.z) > radius2
         then
+--        print("too far ")
             near_node.active_pos[hash] = nil
         else
-            if minetest.get_node(pos).name ~= near_node.name then
+            if minetest.get_node(pos).name ~= near_node.node_name then
+--        print("node changed to ".. minetest.get_node(pos).name)
                 near_node.active_pos[hash] = nil
             end
         end
@@ -264,7 +274,6 @@ end
 
 -- Check if conditions on effect are all ok
 local function verify_player_effect_conditions(effect)
-	--	local player = minetest.get_player_by_name(effect.player_name)
 	if not effect.conditions then
 		return true -- no condition, always active (ex : poison)
 	end
@@ -312,7 +321,6 @@ function effects_api.players_effects_loop(dtime)
 
 	-- Effects loops (players)
 	for player_name, effects in pairs(active_player_effects) do
-
 		-- Effects loops (effects)
 		for index, effect in ipairs(effects) do
 			effect.elapsed_time = effect.elapsed_time + dtime
@@ -322,7 +330,7 @@ function effects_api.players_effects_loop(dtime)
 
 			-- Effect conditions
 			if not verify_player_effect_conditions(effect) then
-				effect_off(effect)
+				effect_stop(effect)
 			end
 
 			-- Effect ends ?
@@ -391,7 +399,7 @@ local function set_effect_for_id(player_name, effect_id, effect)
 
     if active_player_effects_ids[player_name] == nil then
         active_player_effects_ids[player_name] = {}
-        setmetatable(active_player_effets_ids[player_name], { __mode = 'v' })
+        setmetatable(active_player_effects_ids[player_name], { __mode = 'v' })
     end
     
     if active_player_effects_ids[player_name][effect_id] then
@@ -564,16 +572,18 @@ function effects_api.dump_effects(player_name)
 			for _, effect in ipairs(active_player_effects[player_name]) do
 				if str ~= "" then str=str.."\n" end
 
-				str = str .. string.format("%s:%s %d%% %.1fs ",
+				str = str..string.format("%s:%s %d%% %.1fs %s",
 					player_name,
 					effect.phase or "?",
 					(effect.intensity or 0)*100,
-					effect.elapsed_time or 0)
+					effect.elapsed_time or 0,
+					effect.id or "")
 				if effect.impacts then
 					for impact, _ in pairs(effect.impacts) do
-						str=str..impact.." "
+						str=str.." "..impact
 					end
 				end
+				str=str..minetest.serialize(effect)
 			end
 		end
 	else

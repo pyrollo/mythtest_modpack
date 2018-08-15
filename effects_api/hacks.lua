@@ -29,6 +29,53 @@ local function get_players_inside_radius(pos, radius)
     return players
 end
 
+function set_equip_effect(player_name, item_name)
+	local effect_def = minetest.registered_items[item_name] and
+			minetest.registered_items[item_name].effect_equip or nil
+	if effect_def then
+		local effect = effects_api.get_effect_by_id(player_name,
+		                                            'equip:'..item_name)
+		if effect == nil then
+			effect = table.copy(effect_def)
+			effect.conditions = effect.conditions or {}
+			effect.conditions.equiped_with = item_name
+			effect.id = 'equip:'..item_name
+            effect = effects_api.affect_player(player_name, effect)
+			minetest.log('info', '[effect_api] New effect affected to "'
+				..player_name..'" because wielding "'..item_name..'".')
+		end
+		-- Restart effect in case it was in fall phase
+		effects_api.effect_restart(effect)
+	end
+end
+
+function set_near_effect(player_name, node_name, pos)
+	local effect_def = minetest.registered_nodes[node_name]
+		and minetest.registered_nodes[node_name].effect_near or nil
+	if effect_def then
+		local effect = effects_api.get_effect_by_id(player_name,
+		                                            'near:'..node_name)
+		if effect == nil then
+			effect = table.copy(effect_def)
+			effect.conditions = effect.conditions or {}
+			effect.conditions.near_node = { node_name = node_name,
+				radius = effect.distance, active_pos = {} }
+			effect.id = 'near:'..node_name
+			effect = effects_api.affect_player(player_name, effect)
+			minetest.log('info', '[effect_api] New effect affected to "'..
+				player_name..'" because getting near to "'..
+				node_name..'" node.')
+		end
+
+		-- Register node position as an active position
+		effect.conditions.near_node
+			.active_pos[minetest.hash_node_position(pos)] = true
+
+		-- Restart effect in case it was in fall phase
+		effects_api.effect_restart(effect)
+	end
+end
+
 -- A hack to detect if player has changed wielded item and wields an item
 -- with effect.
 
@@ -41,18 +88,12 @@ function effects_api.players_wield_hack(dtime)
 		stack = player:get_wielded_item() 
 		item_name = nil
 		
-		if stack then
-			item_name = stack:get_name()
-		end
+		if stack then item_name = stack:get_name() end
 		
 		if players_item_wield[player_name] ~= item_name then
-			if item_name and minetest.registered_items[item_name] and
-			   minetest.registered_items[item_name].effect then
-                local effect = minetest.registered_items[item_name].effect
-                effect.conditions.equiped_with=item_name
-			   	effects_api.affect_player(player_name, effect)
-				minetest.log('info', '[effect_api] New effect affected to "'
-                    ..player_name..'" because wielding "'..item_name..'".')
+			-- Wield item changed
+			if item_name then
+				set_equip_effect(player_name, item_name)
 			end
 			players_item_wield[player_name] = item_name
 		end
@@ -68,35 +109,16 @@ minetest.register_abm({
     interval=abm_interval,
     chance=1,
     catch_up=true,
-    action = function(pos, node) 
-        local def = minetest.registered_nodes(node.name)
-        if def and def.effect and def.effect.distance then 
-            local players = get_players_inside_radius(pos, def.effect.radius)
-            local effect
-            
-            for _, player in pairs(players) do
-                local effect = 
-                    effects_apî.get_effect_by_id(player:get_player_name(),
-                    'near:'..node_name)
-
-                if effect == nil then
-                    effect = table.copy(def.effect)
-                    effect.conditions.near_node={ node_name = node.name, 
-                        radius = effect.distance, active_pos = {} }
-                    effect.id = 'near:'..node_name
-
-                    affect_player(player:get_player_name(), effect)
-
-                    minetest.log('info', 
-                        '[effect_api] New effect affected to "'
-                        ..player_name..'" because getting near to  "'
-                        ..node_name..'" node.')
-                end
-                effect.conditions.near_node
-                    .active_pos[minetest.hash_node_position(pos)] = true
-            end
-        end
-    end,
+    action = function(pos, node)
+		local distance = minetest.registered_nodes[node.name]
+		   and minetest.registered_nodes[node.name].effect_near
+		   and minetest.registered_nodes[node.name].effect_near.distance or nil
+		if distance then
+			local players = get_players_inside_radius(pos, distance)
+			for _, player in pairs(players) do
+				set_near_effect(player:get_player_name(), node.name, pos)
+			end
+		end
+	end,
 })
-
 
