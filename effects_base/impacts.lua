@@ -68,6 +68,44 @@ effects_api.register_player_impact_type('gravity', {
         end,
 })
 
+-- Health
+---------
+-- Params :
+-- 1: Health points per seconds gain or loss
+
+-- TODO:
+-- 1: Health points gained (+) or lost (-) per period
+-- 2: Period in seconds
+
+local function change_hp(player, delta, reason)
+	local hp = player:get_hp()
+	if delta + hp  > (core.PLAYER_MAX_HP_DEFAULT or 20) then
+		delta = (core.PLAYER_MAX_HP_DEFAULT or 20) - hp
+	end
+	if delta + hp < 0 then
+		delta = hp
+	end
+	hp = delta + hp 
+	player:set_hp(hp, reason)
+	return delta
+end
+
+effects_api.register_player_impact_type('health', {
+	vars = { timer = 0 },
+	step = function(impact, dtime)
+		impact.vars.timer = impact.vars.timer + dtime
+		if impact.vars.timer > 1 then
+			local health = effects_api.sum_valints(
+				effects_api.get_valints(impact.params, 1))
+			local times = math.floor(impact.vars.timer)
+
+			change_hp(minetest.get_player_by_name(impact.player_name),
+			          times*health, 'magic')
+
+			impact.vars.timer =	impact.vars.timer - times
+		end
+	end,
+})
 
 -- Visible (WIP)
 ----------
