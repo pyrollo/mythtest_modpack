@@ -32,23 +32,32 @@ dofile(effects_api.path.."/impact_helpers.lua")
 -- Main loop
 minetest.register_globalstep(function(dtime)
 	effects_api.players_wield_hack(dtime)
-    effects_api.players_effects_loop(dtime)
-    effects_api.players_impacts_loop(dtime)
+	for _,player in ipairs(minetest.get_connected_players()) do
+		effects_api.effect_step(player, dtime)
+	end
 end)
 
 -- Effects persistance
 minetest.register_on_joinplayer(effects_api.load_player_data)
-
-minetest.register_on_leaveplayer(function(player) 
-	effects_api.save_player_data(player)
-	effects_api.forget_player(player)
-end)
+minetest.register_on_leaveplayer(effects_api.save_player_data)
 
 local function periodic_save()
-	--	print(effects_api.dump_effects())
-    effects_api.save_all_players_data()
-    minetest.after(save_interval, periodic_save)
+	for _,player in ipairs(minetest.get_connected_players()) do
+		print(effects_api.dump_effects(player))
+	end
+--	effects_api.save_all_players_data()
+	minetest.after(save_interval, periodic_save)
 end
 
 minetest.after(save_interval, periodic_save)
 
+-- Debug function
+minetest.register_chatcommand("clear_effects", {
+	params = "",
+	description = "Clears all effects",
+	func = function(player_name, param)
+			player = minetest.get_player_by_name(player_name)
+			player.effect_api = nil
+			return true, "Done."
+		end,
+})

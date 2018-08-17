@@ -1,10 +1,7 @@
 minetest.register_tool("mythitem:ring", {
     description = "Blind ring",
     inventory_image = "mythitem_ring_simple.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    },
-    effect = {
+    effect_equip = {
     	raise = 2,
     	fall = 2,
     	impacts = { vision=0 },
@@ -14,31 +11,23 @@ minetest.register_tool("mythitem:ring", {
 minetest.register_tool("mythitem:ring2", {
     description = "Invisibility ring",
     inventory_image = "mythitem_ring_thick.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    },
-    effect = {
-    	raise = 0,
-    	fall = 0,
+    effect_equip = {
     	impacts = { visible=0 },
-    }
-
+    },
 })
+
 minetest.register_tool("mythitem:ring3", {
-    description = "Gem ring",
+    description = "Strange ring",
     inventory_image = "mythitem_ring_gem.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
+    effect_equip = {
+    	impacts = { texture=1 },
     }
 })
 
 minetest.register_tool("mythitem:ring4", {
     description = "Ring of darkness",
     inventory_image = "mythitem_ring_spikes.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    },
-    effect = {
+    effect_equip = {
     	impacts = { daylight = 0 },
     	raise = 1,
     	fall = 1,
@@ -46,56 +35,72 @@ minetest.register_tool("mythitem:ring4", {
 })
 
 minetest.register_tool("mythitem:ring5", {
-    description = "Double spiked ring",
+    description = "Bad ring",
     inventory_image = "mythitem_ring_double_spikes.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
+    effect_equip = { 
+    	raise = 3,
+    	impacts = { health = -0.5 }
     }
 })
 
 minetest.register_tool("mythitem:ring6", {
-    description = "Thick gem ring",
-    inventory_image = "mythitem_ring_thick_gem.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    }
+	description = "Thick gem ring",
+	inventory_image = "mythitem_ring_thick_gem.png",
 })
 
 minetest.register_tool("mythitem:amulet1", {
-    description = "Ankh amulet",
-    inventory_image = "mythitem_amulet_ankh.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    }
+	description = "Regeneration amulet",
+	inventory_image = "mythitem_amulet_ankh.png",
+	effect_equip = {
+		raise = 2,
+		fall = 2,
+		impacts = { health = 1 }
+	}
 })
 
 minetest.register_tool("mythitem:amulet2", {
-    description = "Jump amulet",
-    inventory_image = "mythitem_amulet_gem.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    },
-    effect = {
-    	impacts = { jump=3 },
-    }
+	description = "Jump amulet",
+	inventory_image = "mythitem_amulet_gem.png",
+	effect_equip = {
+		impacts = { jump=3 },
+	}
 })
 
 minetest.register_tool("mythitem:amulet3", {
-    description = "Big gem amulet",
-    inventory_image = "mythitem_amulet_big_gem.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    }
+	description = "Big gem amulet",
+	inventory_image = "mythitem_amulet_big_gem.png",
 })
 
 minetest.register_tool("mythitem:amulet4", {
-    description = "Big amulet",
-    inventory_image = "mythitem_amulet_big.png",
-    tool_capabilities = {
-        groupcaps= {uses=70, maxlevel=1}
-    }
+	description = "Big amulet",
+	inventory_image = "mythitem_amulet_big.png",
 })
 
+minetest.register_node("mythitem:darkstone", {
+	description = "Dark stone of darkness",
+	tiles = {"mythitem_rune_o.png"},
+	groups = {cracky = 3, stone = 1, building = 1, effect_trigger = 1},
+	light_source = 4,
+	effect_near = {
+		distance = 10,
+		impacts = { daylight = 0 },
+		raise = 1,
+		fall = 1,
+	},
+	effect_equip = {
+		distance = 10,
+		impacts = { daylight = 0.6 },
+		raise = 1,
+		fall = 1,
+	},
+})
+
+
+minetest.register_node("mythitem:runestone_o", {
+	description = "Rune",
+	tiles = {"mythitem_rune_o.png"},
+	groups = {cracky = 3, stone = 1, building = 1, effect_trigger = 1},
+})
 
 
 minetest.register_chatcommand("test", {

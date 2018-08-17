@@ -4,22 +4,16 @@
 -- Params :
 -- 1: Speed multiplier [0..infinite]. Default: 1
 
-effects_api.register_player_impact_type('speed', {
-    reset = function(impact) 
-            local player = minetest.get_player_by_name(impact.player_name)
-            if player then
-                player:set_physics_override({speed = 1.0}) 
-            end
-        end,
+effects_api.register_impact_type('player', 'speed', {
+	reset = function(impact) 
+			impact.subject:set_physics_override({speed = 1.0}) 
+		end,
 	update = function(impact) 
-            local player = minetest.get_player_by_name(impact.player_name)
-            if player then
-                player:set_physics_override({
-					speed = effects_api.multiply_valints(
-						effects_api.get_valints(impact.params, 1))
-                })
-            end
-        end,
+			impact.subject:set_physics_override({
+				speed = effects_api.multiply_valints(
+					effects_api.get_valints(impact.params, 1))
+			})
+		end,
 })
 
 -- Jump
@@ -27,22 +21,16 @@ effects_api.register_player_impact_type('speed', {
 -- Params :
 -- 1: Jump multiplier [0..infinite]. Default: 1
 
-effects_api.register_player_impact_type('jump', {
-    reset = function(impact) 
-            local player = minetest.get_player_by_name(impact.player_name)
-            if player then
-                player:set_physics_override({jump = 1.0}) 
-            end
-        end,
-	update = function(impact) 
-            local player = minetest.get_player_by_name(impact.player_name)
-            if player then
-                player:set_physics_override({
-                    jump = effects_api.multiply_valints(
-						effects_api.get_valints(impact.params, 1))
-                })
-            end
-        end,
+effects_api.register_impact_type('player', 'jump', {
+	reset = function(impact) 
+			impact.subject:set_physics_override({jump = 1.0}) 
+		end,
+		update = function(impact) 
+			impact.subject:set_physics_override({
+				jump = effects_api.multiply_valints(
+					effects_api.get_valints(impact.params, 1))
+			})
+		end,
 })
 
 -- Gravity
@@ -50,22 +38,16 @@ effects_api.register_player_impact_type('jump', {
 -- Params :
 -- 1: Gravity multiplier [0..infinite]. Default: 1
 
-effects_api.register_player_impact_type('gravity', {
-    reset = function(impact) 
-            local player = minetest.get_player_by_name(impact.player_name)
-            if player then
-                player:set_physics_override({gravity = 1.0}) 
-            end
-        end,
+effects_api.register_impact_type('player', 'gravity', {
+	reset = function(impact) 
+			impact.subject:set_physics_override({gravity = 1.0}) 
+		end,
 	update = function(impact) 
-            local player = minetest.get_player_by_name(impact.player_name)
-            if player then
-                player:set_physics_override({
-                    gravity = effects_api.multiply_valints(
-						effects_api.get_valints(impact.params, 1))
-                })
-            end
-        end,
+			impact.subject:set_physics_override({
+				gravity = effects_api.multiply_valints(
+					effects_api.get_valints(impact.params, 1))
+			})
+		end,
 })
 
 -- Health
@@ -90,7 +72,7 @@ local function change_hp(player, delta, reason)
 	return delta
 end
 
-effects_api.register_player_impact_type('health', {
+effects_api.register_impact_type('player', 'health', {
 	vars = { timer = 0 },
 	step = function(impact, dtime)
 		impact.vars.timer = impact.vars.timer + dtime
@@ -99,8 +81,7 @@ effects_api.register_player_impact_type('health', {
 				effects_api.get_valints(impact.params, 1))
 			local times = math.floor(impact.vars.timer)
 
-			change_hp(minetest.get_player_by_name(impact.player_name),
-			          times*health, 'magic')
+			change_hp(impact.subject, times*health, 'magic')
 
 			impact.vars.timer =	impact.vars.timer - times
 		end
@@ -112,17 +93,15 @@ effects_api.register_player_impact_type('health', {
 -- Params :
 -- TODO:1: Vision multiplier [0..1]. 0 = Blind, 1 and above = normal. Default: 1
 
-effects_api.register_player_impact_type('visible', {
+effects_api.register_impact_type('player', 'visible', {
     reset = function(impact)
-			local player = minetest.get_player_by_name(impact.player_name)
-			player:set_properties({is_visible = 1 })
+			impact.subject:set_properties({is_visible = 1 })
 		end,
 	update = function(impact)
-			local player = minetest.get_player_by_name(impact.player_name)
 			local vision = effects_api.multiply_valints(
 				effects_api.get_valints(impact.params, 1))
-			player:set_properties({is_visible = vision >=1 })
-        end,
+			impact.subject:set_properties({is_visible = vision >=1 })
+		end,
 })
 
 -- Daylight (WIP)
@@ -157,19 +136,17 @@ local function get_default_daynight_ratio()
 end
 
 -- TODO:revoir comment calculer ca. Il faut que l'intensite indique l'influence vers le jour ou la nuit
-effects_api.register_player_impact_type('daylight', {
-    reset = function(impact)
-			local player = minetest.get_player_by_name(impact.player_name)
-			player:override_day_night_ratio(nil)
-        end,
+effects_api.register_impact_type('player', 'daylight', {
+	reset = function(impact)
+			impact.subject:override_day_night_ratio(nil)
+		end,
 	update = function(impact)
-			local player = minetest.get_player_by_name(impact.player_name)
 			local baseratio = get_default_daynight_ratio()
 			local daylight = effects_api.multiply_valints(
 				effects_api.get_valints(impact.params, 1))
-			player:override_day_night_ratio(daylight)
---			player:override_day_night_ratio(get_default_daynight_ratio())
-        end,
+			impact.subject:override_day_night_ratio(daylight)
+--			impact.subject:override_day_night_ratio(get_default_daynight_ratio())
+		end,
 })
 
 
@@ -179,25 +156,23 @@ effects_api.register_player_impact_type('daylight', {
 -- 1: Vision multiplier [0..1]. 0 = Blind, 1 and above = normal. Default: 1
 -- TODO: 2: Mask color (colorstring). Default "black".
 
-effects_api.register_player_impact_type('vision', {
+effects_api.register_impact_type('player', 'vision', {
 	vars = { hudid = nil },
-    reset = function(impact)
-            if impact.vars.hudid then
-	    		local player = minetest.get_player_by_name(impact.player_name)
-            	player:hud_remove(impact.vars.hudid)
-            end
-        end,
+	reset = function(impact)
+			if impact.vars.hudid then
+				impact.subject:hud_remove(impact.vars.hudid)
+			end
+		end,
 	update = function(impact)
-			local player = minetest.get_player_by_name(impact.player_name)
 			local vision = effects_api.multiply_valints(
 				effects_api.get_valints(impact.params, 1))
 			if vision > 1 then vision = 1 end
 			local text = "effect_black_pixel.png^[colorize:#000000^[opacity:"..
 				math.ceil(255-vision*255) --^[colorize:#000000:255^
 			if impact.vars.hudid then
-				player:hud_change(impact.vars.hudid, 'text', text) 
+				impact.subject:hud_change(impact.vars.hudid, 'text', text) 
 			else
-				impact.vars.hudid = player:hud_add({
+				impact.vars.hudid = impact.subject:hud_add({
 					hud_elem_type = "image",
 					text=text,
 					scale = { x=-100, y=-100},
@@ -205,10 +180,41 @@ effects_api.register_player_impact_type('vision', {
 					alignment = {x = 0, y = 0}
 				})
 			end
-        end,
+		end,
 })
 
+-- Texture (WIP)
+----------
+-- Params:
+-- 1-Colorize 
+-- 2-Opacity [0..1]
 
+effects_api.register_impact_type('player', 'texture', {
+	vars = { initial_textures = nil },
+	reset = function(impact)
+			if impact.vars.initial_textures then
+				impact.subject:set_properties({ 
+					textures = impact.vars.initial_textures })
+				impact.vars.initial_textures = nil
+			end
+		end,
+	update = function(impact)
+			if not impact.vars.initial_textures then
+				local props = impact.subject:get_properties()
+				if props.textures then
+					impact.vars.initial_textures = table.copy(props.textures)
+					for key, value in pairs(props.textures) do
+--						props.textures[key] = value.."^[colorize:#00800040"
+						props.textures[key] = value.."^[opacity:128" -- invisible
+						props.textures[key] = value.."^[opacity:129" -- visible
+-- https://github.com/minetest/minetest/pull/7148 
+-- Alpha textures on entities to be released in Minetest 0.5
+					end
+					impact.subject:set_properties(props)
+				end
+			end
+		end,
+	})
 --[[ Notes
     player:set_properties({object property table}) 
     
