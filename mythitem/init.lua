@@ -95,6 +95,21 @@ minetest.register_node("mythitem:darkstone", {
 	},
 })
 
+minetest.register_tool("mythitem:wand", {
+	description = "Test wand",
+	inventory_image = "default_stick.png",
+	effect_use_on = {
+		raise = 1,
+		fall = 1,
+		duration = 4,
+		impacts = { texture = { color = "#FF000080" } }
+	},
+	on_use = effects_api.on_use_tool_callback,
+})
+
+
+
+
 
 minetest.register_node("mythitem:runestone_o", {
 	description = "Rune",

@@ -53,7 +53,7 @@ local phase_end  = 4
 -- Impact registry
 ------------------
 
-local impact_types = { player = {}, mobs = {} }
+local impact_types = { player = {}, mob = {} }
 
 --- register_impact_type
 -- Registers a player impact type.
@@ -76,19 +76,31 @@ local impact_types = { player = {}, mobs = {} }
 --	changed = true/false  Indicates wether the impact has changed or not since
 --                        last step.
 -- }
-function effects_api.register_impact_type(subject, name, definition)
-    if impact_types[subject] == nil then
-		error ( '[effects_api] Subject type "'..subject..'" unknown.', 2)
-    end
-    
-	if impact_types[subject][name] then
-		error ( 'Impact type "'..name..'" already registered for '..subject..'.', 2)
+function effects_api.register_impact_type(subjects, name, definition)
+	if type(subjects) == 'string' then
+		subjects = { subjects }
 	end
-    
-    local def = table.copy(definition)
-	def.name = name
-    def.subject = subject
-	impact_types[subject][name] = def
+
+	if type(subjects) ~= 'table' then
+		error ( '[effects_api] Subjects is expected to be either a string or a table of subject type names)')
+	end
+
+	for _, subject in ipairs(subjects) do
+
+		if impact_types[subject] == nil then
+			error ( '[effects_api] Subject type "'..subject..'" unknown.', 2)
+		end
+
+		if impact_types[subject][name] then
+			error ( 'Impact type "'..name..'" already registered for '..
+				subject..'.', 2)
+		end
+
+		local def = table.copy(definition)
+		def.name = name
+		def.subject = subject
+		impact_types[subject][name] = def
+	end
 end
 
 --- get_impact_type
@@ -97,11 +109,11 @@ end
 -- @param name Name of the impact type
 -- @returns Impact type definition table
 function effects_api.get_impact_type(subject, name)
-    if impact_types[subject] == nil then
+	if impact_types[subject] == nil then
 		error ( '[effects_api] Subject type "'..subject..'" unknown.', 2)
-    end
+	end
 
-    return impact_types[subject][name]
+	return impact_types[subject][name]
 end
 
 -- Subjects
@@ -139,17 +151,29 @@ effects_api.get_subject_string = get_subject_string
 -- Q&D trick to associate custom data to player
 local function data(subject)
 
-	if subject:is_player() then
+	if subject.is_player and subject:is_player() then
 		local player_name = subject:get_player_name()
-		player_data[player_name] = player_data[player_name] or 
+		player_data[player_name] = player_data[player_name] or
 			{ effects={}, impacts={}, type = 'player' }
 		return player_data[player_name]
 	end
 
 	local entity = subject:get_luaentity()
-	if entity then
-		entity.effects_data = entity.effects_data or 
-			{ effects={}, impacts={}, type = 'mob' }
+	if entity and entity.type then
+		if entity.effects_data then return entity.effects_data end
+
+		entity.effects_data = { effects={}, impacts={}, type = 'mob' }
+		if entity.on_step then
+			entity.effects_data.on_step = entity.on_step
+			entity.on_step = function(entity, dtime)
+				effects_api.effect_step(entity.object, dtime)
+				entity.effects_data.on_step(entity, dtime)
+			end
+		else
+			entity.on_step = function(entity, dtime)
+				effects_api.effect_step(entity, dtime)
+			end
+		end
 		return entity.effects_data
 	end
 
@@ -193,20 +217,20 @@ end
 -- @param impact_type_name Name of the impact type
 
 function Effect:get_impact(impact_type_name)
-    -- Check for existing impacts
-    local data = data(self.subject)
-    if data.impacts[impact_type_name] then
-        return data.impacts[impact_type_name]
-    end
+	-- Check for existing impacts
+	local data = data(self.subject)
+	if data.impacts[impact_type_name] then
+		return data.impacts[impact_type_name]
+	end
 
-    -- A new entry in the impacts table has to be created now
-    local subject_type = get_subject_type(self.subject) 
-    local impact_type = effects_api.get_impact_type(subject_type, 
-                                                    impact_type_name)
+	-- A new entry in the impacts table has to be created now
+	local subject_type = get_subject_type(self.subject)
+	local impact_type = effects_api.get_impact_type(subject_type,
+	                                                impact_type_name)
 
-   	if impact_type == nil then
+	if impact_type == nil then
 		minetest.log('error', '[effects_api] Impact type "'..impact_type_name
-            ..'" not registered for '..subject_type..'.')
+			..'" not registered for '..subject_type..'.')
 		return nil
 	end
 
@@ -217,26 +241,21 @@ function Effect:get_impact(impact_type_name)
 			subject = self.subject,
 			type = impact_type_name,
 		}
-
-		-- Params is a week reference table to effect
-		setmetatable(
-			data.impacts[impact_type_name].params,
-            { __mode = 'v' })
 	end
 
 	return data.impacts[impact_type_name]
 end
 
 function Effect:change_intensity(intensity)
-    if self.intensity ~= intensity then
-        self.intensity = intensity
-        self.changed = true
-    end
+	if self.intensity ~= intensity then
+		self.intensity = intensity
+		self.changed = true
+	end
 end
 
 function Effect:step(dtime)
 	-- Internal time
-    self.elapsed_time = self.elapsed_time + dtime
+	self.elapsed_time = self.elapsed_time + dtime
 
 	-- Effect conditions
 	if not self:check_conditions() then self:stop() end
@@ -264,11 +283,14 @@ function Effect:step(dtime)
 
 	if self.phase == phase_end then self:change_intensity(0) end
 	
-	-- Propagate intensity to impacts
-	for impact_name, impacts in pairs(self.impacts) do
-		if impacts.intensity ~= self.intensity then
-			impacts.intensity = self.intensity
+	-- Propagate to impacts (intensity and end)
+	for impact_name, impact in pairs(self.impacts) do
+		if impact.intensity ~= self.intensity then
+			impact.intensity = self.intensity
 			data(self.subject).impacts[impact_name].changed = true
+		end
+		if self.phase == phase_end then
+			impact.ended = true
 		end
 	end
 end
@@ -399,7 +421,9 @@ end
 
 function effects_api.effect_step(subject, dtime)
 	local data = data(subject)
-
+--if data.type ~= 'player' then
+--print(dump(data))
+--end
 	-- Effects
 	for index, effect in pairs(data.effects) do
 		-- Compute effect elapsed_time, phase and intensity
@@ -407,10 +431,8 @@ function effects_api.effect_step(subject, dtime)
 
 		-- Effect ends ?
 		if effect.phase == phase_end then
+			-- Delete effect
 			data.effects[index] = nil
-			-- This looks a bit brutal but it does not happen so often 
-			-- (only when an effect ends)
-			collectgarbage()
 		end
 	end
 
@@ -420,12 +442,16 @@ function effects_api.effect_step(subject, dtime)
 			data.type, impact_name)
 
 		-- Check there are still effects using this impact
-		if next(impact.params,nil) == nil then
-			if type(impact_type.reset) == 'function' then
-				impact_type.reset(impact)
+		local remains = false
+		for key, params in pairs(impact.params) do
+			if params.ended then
+				impact.params[key] = nil
+			else
+				remains = true
 			end
-			data.impacts[impact_name] = nil
-		else
+		end
+
+		if remains then
 			-- Update impact if changed (effect intensity changed)
 			if impact.changed
 			   and type(impact_type.update) == 'function' then
@@ -438,6 +464,12 @@ function effects_api.effect_step(subject, dtime)
 			end
 
 			impact.changed = false
+		else
+			-- Ends impact
+			if type(impact_type.reset) == 'function' then
+				impact_type.reset(impact)
+			end
+			data.impacts[impact_name] = nil
 		end
 	end
 end
@@ -563,7 +595,7 @@ function effects_api.affect(subject, definition)
 
 	-- Duration condition
 	if effect.duration then
-		effect.set_conditions( { duration = effect.duration } )  -- - ( effect.fall or 0 )
+		effect:set_conditions( { duration = effect.duration } )  -- - ( effect.fall or 0 )
 	end
 
 	-- Affect to subject

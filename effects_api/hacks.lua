@@ -122,3 +122,25 @@ minetest.register_abm({
 	end,
 })
 
+function effects_api.on_use_tool_callback(itemstack, user, pointed_thing)
+	local def = minetest.registered_items[itemstack:get_name()]
+
+	if def then
+		if def.effect_use_on and pointed_thing.type == "object" then
+			effects_api.affect(pointed_thing.ref, def.effect_use_on)
+		end
+		if def.effect_use then
+			effects_api.affect(user, def.effect_use)
+		end
+	end
+end
+
+--[[
+-- TODO: manage lack of CMI module
+if minetest.global_exists("cmi") then
+	cmi.register_on_stepmob(mob_on_step_callback)
+else
+	minetest.log('warning', "[effects_api] CMI mod not found, won't be able to manage mob effects")
+end
+--]]
+

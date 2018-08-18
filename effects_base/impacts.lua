@@ -189,7 +189,7 @@ effects_api.register_impact_type('player', 'vision', {
 -- 1-Colorize 
 -- 2-Opacity [0..1]
 
-effects_api.register_impact_type('player', 'texture', {
+effects_api.register_impact_type({'player', 'mob'}, 'texture', {
 	vars = { initial_textures = nil },
 	reset = function(impact)
 			if impact.vars.initial_textures then
@@ -204,9 +204,9 @@ effects_api.register_impact_type('player', 'texture', {
 				if props.textures then
 					impact.vars.initial_textures = table.copy(props.textures)
 					for key, value in pairs(props.textures) do
---						props.textures[key] = value.."^[colorize:#00800040"
-						props.textures[key] = value.."^[opacity:128" -- invisible
-						props.textures[key] = value.."^[opacity:129" -- visible
+						props.textures[key] = value.."^[colorize:#80000040"
+--						props.textures[key] = value.."^[opacity:128" -- invisible
+--						props.textures[key] = value.."^[opacity:129" -- visible
 -- https://github.com/minetest/minetest/pull/7148 
 -- Alpha textures on entities to be released in Minetest 0.5
 					end
@@ -215,6 +215,8 @@ effects_api.register_impact_type('player', 'texture', {
 			end
 		end,
 	})
+	
+	
 --[[ Notes
     player:set_properties({object property table}) 
     
