@@ -43,7 +43,7 @@ minetest.register_on_leaveplayer(effects_api.save_player_data)
 
 local function periodic_save()
 	for _,player in ipairs(minetest.get_connected_players()) do
-		print(effects_api.dump_effects(player))
+--		print(effects_api.dump_effects(player))
 	end
 --	effects_api.save_all_players_data()
 	minetest.after(save_interval, periodic_save)

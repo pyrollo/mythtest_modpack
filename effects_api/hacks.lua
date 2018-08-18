@@ -39,9 +39,6 @@ function set_equip_effect(subject, item_name)
 			effect = effects_api.affect(subject, definition)
 			effect:set_conditions({ equiped_with = item_name })
 			effect:start()
-			minetest.log('info', '[effect_api] New effect affected to '..
-				effects_api.get_subject_string(subject)..
-				' because wielding "'..item_name..'".')
 		end
 		-- Restart effect in case it was in fall phase
 		effect:restart()
@@ -62,9 +59,6 @@ function set_near_effect(subject, node_name, pos)
 				active_pos = {}
 			} } )
 			effect:start()
-			minetest.log('info', '[effect_api] New effect affected to '..
-				effects_api.get_subject_string(subject)..
-				' because getting near to "'..node_name..'" node.')
 		end
 
 		-- Register node position as an active position

@@ -23,9 +23,8 @@
 local meta_key = "effects_api:active_effects"
 
 -- World subject
-local world = { effects = {}, impacts = {}, type = 'world' }
+local world = { effects = {}, impacts = {}, type = 'world', name = 'World' }
 effects_api.world = world
-
 
 -- Effect phases
 ----------------
@@ -57,8 +56,8 @@ local impact_types = { player = {}, mob = {} }
 
 --- register_impact_type
 -- Registers a player impact type.
--- @param subject Subject type affected by the impact
--- @param name Unique name of the impact type for the subject type
+-- @param subjects Subject type or table of subjects type affected by the impact
+-- @param name Unique (for a subject type) name of the impact
 -- @param def Definition of the impact type
 -- def = {
 --	vars = { a=1, b=2, ... }       Internal variables needed by the impact (per
@@ -67,32 +66,30 @@ local impact_types = { player = {}, mob = {} }
 --	update = function(impact)      Function called to apply effect
 --	step = function(impact, dtime) Function called every global step
 --}
--- Impact passed to functions is :
+-- Impact passed to functions is:
 -- impact = {
---  subject = 'player'/'mob'/'world'
+--  subject = player or mob ObjectRef
 -- 	name = '...',         Impact type name.
 --  vars = {},            Internal vars (indexed by name).
--- 	params = {},          (weak) table of per effect params and intensity.
+-- 	params = {},          Table of per effect params and intensity.
 --	changed = true/false  Indicates wether the impact has changed or not since
 --                        last step.
 -- }
 function effects_api.register_impact_type(subjects, name, definition)
-	if type(subjects) == 'string' then
-		subjects = { subjects }
-	end
-
+	if type(subjects) == 'string' then subjects = { subjects } end
 	if type(subjects) ~= 'table' then
-		error ( '[effects_api] Subjects is expected to be either a string or a table of subject type names)')
+		error ('[effects_api] Subjects is expected to be either a string or '..
+		       'a table of subject type names)', 2)
 	end
 
 	for _, subject in ipairs(subjects) do
 
 		if impact_types[subject] == nil then
-			error ( '[effects_api] Subject type "'..subject..'" unknown.', 2)
+			error ('[effects_api] Subject type "'..subject..'" unknown.', 2)
 		end
 
 		if impact_types[subject][name] then
-			error ( 'Impact type "'..name..'" already registered for '..
+			error ('Impact type "'..name..'" already registered for '..
 				subject..'.', 2)
 		end
 
@@ -110,7 +107,12 @@ end
 -- @returns Impact type definition table
 function effects_api.get_impact_type(subject, name)
 	if impact_types[subject] == nil then
-		error ( '[effects_api] Subject type "'..subject..'" unknown.', 2)
+		error('[effects_api] Subject type "'..subject..'" unknown.', 2)
+	end
+
+	if impact_types[subject][name] == nil then
+		minetest.log('error', '[effects_api] Impact type "'..name
+			..'" not registered for '..subject..'.')
 	end
 
 	return impact_types[subject][name]
@@ -121,48 +123,31 @@ end
 
 local player_data = {}
 
-local function get_subject_type(subject) 
-	if subject == world then
-		return "world"
-	end
-	if type(subject) == "userdata" then 
-		if subject:is_player() then return "player" end
-		if subject:get_luaentity() then return "mob" end 
-	end
-	minetest.log('error', '[effects_api] get_subject_type was unable to detect type of subject. Dump='..dump(subject)..')')
-	return nil
-end
-
-local function get_subject_string(subject)
-	local type = get_subject_type(subject) 
-	if type == "world" then
-		return 'World'
-	end
-	if type == "player" then
-		return 'Player "'..subject:get_player_name()..'"'
-	end
-	if type == "mob" then
-		return 'Mob "'..subject:get_lua_entity().name..'"'
-	end
-	return "unknown subject"
-end
-effects_api.get_subject_string = get_subject_string
-
--- Q&D trick to associate custom data to player
+-- Return data storage for given subject:
+-- For players, data is stored in the player_data table indexed by player name.
+-- TODO: Free player_data entry when player is leaving
+-- For mobs, data is stored in effects_api field of the LUAEntity table.
+-- For world, data is stored in world local table.
 local function data(subject)
 
+	-- Player subjects
 	if subject.is_player and subject:is_player() then
 		local player_name = subject:get_player_name()
 		player_data[player_name] = player_data[player_name] or
-			{ effects={}, impacts={}, type = 'player' }
+			{ effects={}, impacts={}, type = 'player',
+			  string = 'Player "'..player_name..'"'}
 		return player_data[player_name]
 	end
 
+	-- Mob subjects
 	local entity = subject:get_luaentity()
 	if entity and entity.type then
 		if entity.effects_data then return entity.effects_data end
 
-		entity.effects_data = { effects={}, impacts={}, type = 'mob' }
+		entity.effects_data = { effects={}, impacts={}, type = 'mob',
+			name = 'Mob "'..entity.name..'"'}
+
+		-- For mobs, hacks the on_step to insert effects_api mechanism
 		if entity.on_step then
 			entity.effects_data.on_step = entity.on_step
 			entity.on_step = function(entity, dtime)
@@ -190,6 +175,9 @@ Effect.__index = Effect
 
 -- To be called only once, when a new impact is created in memory
 local function link_effect_to_impacts(effect)
+
+	local data = data(effect.subject)
+
 	-- Create / link impacts
 	if effect.impacts then
 		for type_name, params in pairs(effect.impacts) do
@@ -199,7 +187,22 @@ local function link_effect_to_impacts(effect)
 				effect.impacts[type_name] = params
 			end
 
-			local impact = effect:get_impact(type_name)
+			local impact = data.impacts[type_name]
+
+			if not impact then
+				-- First effect having this impact on subject : create impact
+				local impact_type = effects_api.get_impact_type(data.type,
+					type_name)
+
+				impact = {
+					vars = table.copy(impact_type.vars or {}),
+					params = {},
+					subject = effect.subject,
+					type = type_name,
+				}
+				data.impacts[type_name] = impact
+			end
+
 			if impact then
 				-- Link effect params to impact params
 				table.insert(impact.params, params)
@@ -209,41 +212,6 @@ local function link_effect_to_impacts(effect)
 			end
 		end
 	end
-end
-
---- get_impact
--- Returns reference to impact table for impact_type_name and create it if
--- necessary.
--- @param impact_type_name Name of the impact type
-
-function Effect:get_impact(impact_type_name)
-	-- Check for existing impacts
-	local data = data(self.subject)
-	if data.impacts[impact_type_name] then
-		return data.impacts[impact_type_name]
-	end
-
-	-- A new entry in the impacts table has to be created now
-	local subject_type = get_subject_type(self.subject)
-	local impact_type = effects_api.get_impact_type(subject_type,
-	                                                impact_type_name)
-
-	if impact_type == nil then
-		minetest.log('error', '[effects_api] Impact type "'..impact_type_name
-			..'" not registered for '..subject_type..'.')
-		return nil
-	end
-
-	if data.impacts[impact_type_name] == nil then
-		data.impacts[impact_type_name] = {
-			vars = table.copy(impact_type.vars or {}),
-			params = {},
-			subject = self.subject,
-			type = impact_type_name,
-		}
-	end
-
-	return data.impacts[impact_type_name]
 end
 
 function Effect:change_intensity(intensity)
@@ -496,13 +464,12 @@ end
 function effects_api.deserialize_effects(subject, serialized)
 	if serialized == "" then return end
 
-	if not get_subject_type(subject) then return end
-	
 	local data = data(subject)
+	if data then return end -- Not a suitable subject
 
 	if data.effects and next(data.effects, nil) then
 		minetest.log('error', '[effects_api] Trying to deserialize effects for '
-			..get_subject_string(subject)..' which already has effects.')
+			..data.name..' which already has effects.')
 		return
 	end
 
@@ -580,7 +547,7 @@ function effects_api.affect(subject, definition)
 	-- verify ID
 	if definition.id and data.effects[definition.id] then
 		minetest.log('error', '[effects_api] Effect ID "'..definition.id..
-			'" already exists for '..get_subject_string(subject)..'.')
+			'" already exists for '..data.name..'.')
 		return nil
 	end
 
@@ -622,11 +589,12 @@ end
 -- @returns String describing effects
 function effects_api.dump_effects(subject)
 	local str = ""
-	for _, effect in pairs(data(subject).effects) do
+	local data = data(subject)
+	for _, effect in pairs(data.effects) do
 		if str ~= "" then str=str.."\n" end
 
 		str = str..string.format("%s:%d %d%% %.1fs %s",
-			get_subject_string(subject),
+			data.name,
 			effect.phase or "",
 			(effect.intensity or 0)*100,
 			effect.elapsed_time or 0,
