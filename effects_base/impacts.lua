@@ -5,12 +5,14 @@
 -- 1: Speed multiplier [0..infinite]. Default: 1
 
 effects_api.register_impact_type('player', 'speed', {
-	reset = function(impact) 
-			impact.subject:set_physics_override({speed = 1.0}) 
+	reset = function(impact, data)
+			impact.subject:set_physics_override(
+				{speed = (data.defaults.speed or 1.0) })
 		end,
-	update = function(impact) 
+	update = function(impact, data)
 			impact.subject:set_physics_override({
-				speed = effects_api.multiply_valints(
+				speed = (data.defaults.speed or 1.0) *
+					effects_api.multiply_valints(
 					effects_api.get_valints(impact.params, 1))
 			})
 		end,
@@ -22,12 +24,15 @@ effects_api.register_impact_type('player', 'speed', {
 -- 1: Jump multiplier [0..infinite]. Default: 1
 
 effects_api.register_impact_type('player', 'jump', {
-	reset = function(impact) 
-			impact.subject:set_physics_override({jump = 1.0}) 
+	reset = function(impact, data)
+			print("jump data default:"..dump(data.defaults))
+			impact.subject:set_physics_override(
+				{jump = (data.defaults.jump or 1.0)})
 		end,
-		update = function(impact) 
+		update = function(impact, data)
 			impact.subject:set_physics_override({
-				jump = effects_api.multiply_valints(
+				jump = (data.defaults.jump or 1.0) *
+					effects_api.multiply_valints(
 					effects_api.get_valints(impact.params, 1))
 			})
 		end,
@@ -39,51 +44,38 @@ effects_api.register_impact_type('player', 'jump', {
 -- 1: Gravity multiplier [0..infinite]. Default: 1
 
 effects_api.register_impact_type('player', 'gravity', {
-	reset = function(impact) 
-			impact.subject:set_physics_override({gravity = 1.0}) 
-		end,
-	update = function(impact) 
+	reset = function(impact, data)
 			impact.subject:set_physics_override({
-				gravity = effects_api.multiply_valints(
+				gravity = (data.defaults.jump or 1.0)})
+		end,
+	update = function(impact, data)
+			impact.subject:set_physics_override({
+				gravity = (data.defaults.gravity or 1.0) *
+					effects_api.multiply_valints(
 					effects_api.get_valints(impact.params, 1))
 			})
 		end,
 })
 
--- Health
+-- Damage
 ---------
 -- Params :
--- 1: Health points per seconds gain or loss
-
--- TODO:
--- 1: Health points gained (+) or lost (-) per period
--- 2: Period in seconds
-
-local function change_hp(player, delta, reason)
-	local hp = player:get_hp()
-	if delta + hp  > (core.PLAYER_MAX_HP_DEFAULT or 20) then
-		delta = (core.PLAYER_MAX_HP_DEFAULT or 20) - hp
-	end
-	if delta + hp < 0 then
-		delta = hp
-	end
-	hp = delta + hp 
-	player:set_hp(hp, reason)
-	return delta
-end
-
-effects_api.register_impact_type('player', 'health', {
-	vars = { timer = 0 },
+-- 1: Health points lost (+) or gained (-) per period
+-- 2: Period length in seconds
+-- TODO: Use a different armor/damage group for magic ?
+effects_api.register_impact_type({'player', 'mob'}, 'damage', {
 	step = function(impact, dtime)
-		impact.vars.timer = impact.vars.timer + dtime
-		if impact.vars.timer > 1 then
-			local health = effects_api.sum_valints(
-				effects_api.get_valints(impact.params, 1))
-			local times = math.floor(impact.vars.timer)
-
-			change_hp(impact.subject, times*health, 'magic')
-
-			impact.vars.timer =	impact.vars.timer - times
+		for _, params in pairs(impact.params) do
+			params.timer = (params.timer or 0) + dtime
+			local times = math.floor(params.timer / (params[2] or 1))
+			if times > 0 then
+				impact.subject:punch(impact.subject, nil, {
+					full_punch_interval = 1.0,
+					damage_groups = {
+						fleshy = times * (params[1] or 0) * params.intensity }
+				})
+				params.timer = params.timer - times * (params[2] or 1)
+			end
 		end
 	end,
 })
@@ -149,7 +141,6 @@ effects_api.register_impact_type('player', 'daylight', {
 		end,
 })
 
-
 -- Vision (WIP)
 ---------
 -- Params :
@@ -199,19 +190,32 @@ effects_api.register_impact_type({'player', 'mob'}, 'texture', {
 			end
 		end,
 	update = function(impact)
-			if not impact.vars.initial_textures then
-				local props = impact.subject:get_properties()
-				if props.textures then
+
+			local modifier = ""
+			local color
+			for _, param in pairs(impact.params) do
+				if param.colorize and param.intensity then
+					color = effects_api.color_to_table(param.colorize)
+					color.a = color.a * param.intensity
+					modifier = modifier.."^[colorize:"..
+						effects_api.color_to_rgba_texture(color)
+				end
+			end
+
+			local props = impact.subject:get_properties()
+			if props.textures then
+				if not impact.vars.initial_textures then
 					impact.vars.initial_textures = table.copy(props.textures)
-					for key, value in pairs(props.textures) do
-						props.textures[key] = value.."^[colorize:#80000040"
+				end
+				for key, _ in pairs(props.textures) do
+					props.textures[key] = impact.vars.initial_textures[key]
+						..modifier
 --						props.textures[key] = value.."^[opacity:128" -- invisible
 --						props.textures[key] = value.."^[opacity:129" -- visible
 -- https://github.com/minetest/minetest/pull/7148 
 -- Alpha textures on entities to be released in Minetest 0.5
-					end
-					impact.subject:set_properties(props)
 				end
+				impact.subject:set_properties(props)
 			end
 		end,
 	})

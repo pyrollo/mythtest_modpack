@@ -29,7 +29,7 @@ local function get_players_inside_radius(pos, radius)
 	return players
 end
 
-function set_equip_effect(subject, item_name)
+function effects_api.set_equip_effect(subject, item_name)
 	local definition = minetest.registered_items[item_name] and
 		minetest.registered_items[item_name].effect_equip or nil
 	if definition then
@@ -87,7 +87,7 @@ function effects_api.players_wield_hack(dtime)
 		if players_item_wield[player_name] ~= item_name then
 			-- Wield item changed
 			if item_name then
-				set_equip_effect(player, item_name)
+				effects_api.set_equip_effect(player, item_name)
 			end
 			players_item_wield[player_name] = item_name
 		end

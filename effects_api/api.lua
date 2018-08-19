@@ -23,7 +23,7 @@
 local meta_key = "effects_api:active_effects"
 
 -- World subject
-local world = { effects = {}, impacts = {}, type = 'world', name = 'World' }
+local world = { effects = {}, impacts = {}, type = 'world', string = 'World' }
 effects_api.world = world
 
 -- Effect phases
@@ -133,9 +133,11 @@ local function data(subject)
 	-- Player subjects
 	if subject.is_player and subject:is_player() then
 		local player_name = subject:get_player_name()
-		player_data[player_name] = player_data[player_name] or
-			{ effects={}, impacts={}, type = 'player',
-			  string = 'Player "'..player_name..'"'}
+		if player_data[player_name] then return player_data[player_name] end
+		player_data[player_name] = {
+			effects={}, impacts={},
+			type = 'player', string = 'Player "'..player_name..'"',
+			defaults = {} }
 		return player_data[player_name]
 	end
 
@@ -144,8 +146,9 @@ local function data(subject)
 	if entity and entity.type then
 		if entity.effects_data then return entity.effects_data end
 
-		entity.effects_data = { effects={}, impacts={}, type = 'mob',
-			name = 'Mob "'..entity.name..'"'}
+		entity.effects_data = {
+			effects={}, impacts={},
+			type = 'mob', string = 'Mob "'..entity.name..'"'}
 
 		-- For mobs, hacks the on_step to insert effects_api mechanism
 		if entity.on_step then
@@ -166,6 +169,8 @@ local function data(subject)
 		return world
 	end
 end
+
+effects_api.get_storage_for_subject = data
 
 -- Effect object
 ----------------
@@ -221,6 +226,13 @@ function Effect:change_intensity(intensity)
 	end
 end
 
+
+--- step
+-- Performs a step of calculation for the effect
+-- @param dtime Time elapsed since last step
+
+-- TODO: For a while after reconnecting, it seems that step runs and conditions
+-- are not in place for effect conservation.
 function Effect:step(dtime)
 	-- Internal time
 	self.elapsed_time = self.elapsed_time + dtime
@@ -263,6 +275,7 @@ function Effect:step(dtime)
 	end
 end
 
+--- stop
 -- Stops effect, with optional fall phase
 function Effect:stop()
 	if self.phase == phase_raise or
@@ -271,6 +284,7 @@ function Effect:stop()
 	end
 end
 
+--- start
 -- Starts or restarts effect if it's in fall or end phase
 function Effect:start()
 	if self.phase == phase_init or
@@ -286,6 +300,9 @@ Effect.restart = Effect.start
 -- Effect conditions check
 --------------------------
 
+--- set_conditions
+-- Add or replace conditions on the effect.
+-- @param conditions A table of key/values describing the conditions
 function Effect:set_conditions(conditions)
 	self.conditions = self.conditions or {}
 	for key, value in pairs(conditions) do
@@ -296,23 +313,12 @@ end
 -- player dead ?
 --minetest.register_on_respawnplayer(func(ObjectRef))`
 
--- Is the subject equiped with item_name? Equiped means wields item or have it
--- in armor equipment slots.
-local function is_equiped(subject, item_name)
+-- Is the subject equiped with item_name?
+function effects_api.is_equiped(subject, item_name)
 	-- Check wielded item
 	local stack = subject:get_wielded_item()
 	if stack and stack:get_name() == item_name then
 		return true
-	end
-
-	-- Check for equiped armors (most likely for players only)
-	local list = subject:get_inventory():get_list("armor")
-	if list then
-		for _, stack in pairs(list) do
-			if stack:get_name() == item_name then
-				return true
-			end
-		end
 	end
 	return false -- Item not found in equipment
 end
@@ -320,7 +326,7 @@ end
 -- Is subject near nodes?
 -- This condition is not in the effect definition, it is created when needed
 -- for effects associated with nodes placed on the map.
-local function is_near_nodes(subject, near_node)
+function effects_api.is_near_nodes(subject, near_node)
 	-- No check, near_nodes should have radius, node_name and active_pos members
 	local subject_pos = subject:get_pos()
 	local radius2 = near_node.radius * near_node.radius
@@ -358,20 +364,22 @@ function Effect:check_conditions()
 
 	-- Next conditions are never true for World subject
 	if self.subject == world and (
-		self.conditions.equiped_with or 
+		self.conditions.equiped_with or
 		self.conditions.near_node)
 	then
 		return false
 	end 
 	-- Check equipment
-	if self.conditions.equiped_with
-	   and not is_equiped(self.subject, self.conditions.equiped_with) then
+	if self.conditions.equiped_with and
+	   not effects_api.is_equiped(self.subject,self.conditions.equiped_with)
+	then
 		return false
 	end
 
 	-- Check nearby nodes
-	if self.conditions.near_node
-	   and not is_near_nodes(self.subject,self.conditions.near_node) then
+	if self.conditions.near_node and
+	   not effects_api.is_near_nodes(self.subject, self.conditions.near_node)
+	then
 		return false
 	end
 
@@ -423,19 +431,19 @@ function effects_api.effect_step(subject, dtime)
 			-- Update impact if changed (effect intensity changed)
 			if impact.changed
 			   and type(impact_type.update) == 'function' then
-				impact_type.update(impact)
+				impact_type.update(impact, data)
 			end
 
 			-- Step
 			if type(impact_type.step) == 'function' then
-				impact_type.step(impact, dtime)
+				impact_type.step(impact, dtime, data)
 			end
 
 			impact.changed = false
 		else
 			-- Ends impact
 			if type(impact_type.reset) == 'function' then
-				impact_type.reset(impact)
+				impact_type.reset(impact, data)
 			end
 			data.impacts[impact_name] = nil
 		end
@@ -458,29 +466,40 @@ end
 
 function effects_api.serialize_effects(subject)
 	local data = data(subject)
-	return minetest.serialize(data.effects)
+	local effects = table.copy(data.effects)
+
+	-- remove subject references from data to be serialized
+	for _, effect in pairs(effects) do
+		effect.subject = nil
+	end
+
+	return minetest.serialize(effects)
 end
 
 function effects_api.deserialize_effects(subject, serialized)
 	if serialized == "" then return end
 
 	local data = data(subject)
-	if data then return end -- Not a suitable subject
+	if not data then return end -- Not a suitable subject
 
 	if data.effects and next(data.effects, nil) then
 		minetest.log('error', '[effects_api] Trying to deserialize effects for '
-			..data.name..' which already has effects.')
+			..data.string..' which already has effects.')
 		return
 	end
 
 	-- Deseralization
 	data.effects = minetest.deserialize(serialized) or {}
-	
-	for index, effect in ipairs(data.effects) do
+
+	for _, effect in pairs(data.effects) do
+		effect.subject = subject
+		effect.break_time = true
+		setmetatable(effect, Effect)
 		link_effect_to_impacts(effect)
 	end
+
 end
-	
+
 function effects_api.save_player_data(player)
 	player:set_attribute(meta_key, effects_api.serialize_effects(player))
 end
@@ -489,19 +508,9 @@ function effects_api.load_player_data(player)
 	effects_api.deserialize_effects(player, player:get_attribute(meta_key))
 end
 
---[[
 function effects_api.save_all_players_data()
-	local player
-	for player_name, effects in pairs(active_player_effects) do
-		player = minetest.get_player_by_name(player_name)
-		if player == nil then
-			minetest.log('warning', '[effects_api] Player "'..player_name..
-				'" has active effects but is not connected. Removing effects.')
-			active_player_effects[player_name] = nil
-			active_player_impacts[player_name] = nil
-		else
-			effects_api.save_player_data(player)
-		end
+	for _,player in ipairs(minetest.get_connected_players()) do
+		effects_api.save_player_data(player)
 	end
 end
 --]]
@@ -547,7 +556,7 @@ function effects_api.affect(subject, definition)
 	-- verify ID
 	if definition.id and data.effects[definition.id] then
 		minetest.log('error', '[effects_api] Effect ID "'..definition.id..
-			'" already exists for '..data.name..'.')
+			'" already exists for '..data.string..'.')
 		return nil
 	end
 
@@ -578,7 +587,11 @@ function effects_api.affect(subject, definition)
 	return effect
 end
 
----
+--- get_effect_by_id
+-- Retrieves an effect by its ID for a given subject
+-- @param subject Concerned subject (player, mob, world)
+-- @param id Id of the effect researched
+-- @returns The Effect object or nil if not found
 function effects_api.get_effect_by_id(subject, id)
 	return data(subject).effects[id]
 end
@@ -594,7 +607,7 @@ function effects_api.dump_effects(subject)
 		if str ~= "" then str=str.."\n" end
 
 		str = str..string.format("%s:%d %d%% %.1fs %s",
-			data.name,
+			data.string,
 			effect.phase or "",
 			(effect.intensity or 0)*100,
 			effect.elapsed_time or 0,

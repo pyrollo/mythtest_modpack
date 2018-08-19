@@ -23,9 +23,10 @@ effects_api.path = minetest.get_modpath(effects_api.name)
 -- Interval in seconds at which effects data is saved into players meta (only 
 -- usefull in case of abdnormal server termination)
 -- TODO:Move into a mod settings
-local save_interval = 1 
+local save_interval = 0.5
 
 dofile(effects_api.path.."/api.lua")
+dofile(effects_api.path.."/integration.lua")
 dofile(effects_api.path.."/hacks.lua")
 dofile(effects_api.path.."/impact_helpers.lua")
 
@@ -40,10 +41,12 @@ end)
 -- Effects persistance
 minetest.register_on_joinplayer(effects_api.load_player_data)
 minetest.register_on_leaveplayer(effects_api.save_player_data)
+minetest.register_on_shutdown(effects_api.save_all_players_data)
 
 local function periodic_save()
 	for _,player in ipairs(minetest.get_connected_players()) do
 --		print(effects_api.dump_effects(player))
+		print(dump(effects_api.get_storage_for_subject(player)))
 	end
 --	effects_api.save_all_players_data()
 	minetest.after(save_interval, periodic_save)

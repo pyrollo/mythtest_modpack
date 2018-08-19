@@ -21,23 +21,23 @@
 -- @param index Index of the value to be exported from @params entries
 -- @returns An array of { value=, intensity= }
 function effects_api.get_valints(params, index)
-    local result = {}
-    for _, param in pairs(params) do
-        if param[index] then
-            table.insert(result,
-                { value = param[index], intensity = param.intensity or 0 })
-        end
-    end
-    return result
+	local result = {}
+	for _, param in pairs(params) do
+		if param[index] then
+			table.insert(result,
+				{ value = param[index], intensity = param.intensity or 0 })
+		end
+	end
+	return result
 end
 
 --- Appends a values and intensities list to another
 -- @param valints List where extra valints will be append
 -- @param extravalints Extra valints to append
 function effects_api.append_valints(valints, extravalints)
-    for _, valint in pairs(extravalints) do
-        table.insert(valints, valint)
-    end
+	for _, valint in pairs(extravalints) do
+		table.insert(valints, valint)
+	end
 end
 
 --- Computes a sum of values with intensities
@@ -218,33 +218,70 @@ local stdcolors = {
 -- @param colorspec Can be a standard color name, a 32 bit integer or a table
 -- @returns A {r,g,b,a} table
 function effects_api.color_to_table(colorspec)
-    local colorint
+	local colorint
 
-    if type(colorspec) == 'string' then
-        colorint = stdcolors[colorspec]
-    end
+	if type(colorspec) == 'string' then
+		if string.sub(colorspec, 1, 1) == "#" then
+			if string.len(colorspec) == 4 then
+				return {
+					r = tonumber("0x"..string.sub(colorspec, 2, 2)),
+					g = tonumber("0x"..string.sub(colorspec, 3, 3)),
+					b = tonumber("0x"..string.sub(colorspec, 4, 4)),
+					a = 0xFF,
+				}
+			elseif string.len(colorspec) == 5 then
+				return {
+					r = tonumber("0x"..string.sub(colorspec, 2, 2)),
+					g = tonumber("0x"..string.sub(colorspec, 3, 3)),
+					b = tonumber("0x"..string.sub(colorspec, 4, 4)),
+					a = tonumber("0x"..string.sub(colorspec, 5, 5)),
+				}
+			elseif string.len(colorspec) == 7 then
+				return {
+					r = tonumber("0x"..string.sub(colorspec, 2, 3)),
+					g = tonumber("0x"..string.sub(colorspec, 4, 5)),
+					b = tonumber("0x"..string.sub(colorspec, 6, 7)),
+					a = 0xFF,
+				}
+			elseif string.len(colorspec) == 9 then
+				return {
+					r = tonumber("0x"..string.sub(colorspec, 2, 3)),
+					g = tonumber("0x"..string.sub(colorspec, 4, 5)),
+					b = tonumber("0x"..string.sub(colorspec, 6, 7)),
+					a = tonumber("0x"..string.sub(colorspec, 8, 9)),
+				}
+			end
+		else
+			colorspec = stdcolors[colorspec]
+			if colorspec then 
+				return {
+					a = 0xFF,
+					r = math.floor(colorint / 0x10000 % 0x100),
+					g = math.floor(colorint / 0x100 % 0x100),
+					b = math.floor(colorint % 0x100),
+				}
+			end
+			return nil
+		end
+	end
 
-    if type(colorspec) == 'number' then
-        colorint = colorspec
-    end
+	if type(colorspec) == 'number' then
+		return {
+			a = math.floor(colorspec / 0x1000000 % 0x100),
+			r = math.floor(colorspec / 0x10000 % 0x100),
+			g = math.floor(colorspec / 0x100 % 0x100),
+			b = math.floor(colorspec % 0x100),
+		}
+	end
 
-    if colorint then
-        return {
-            a = math.floor(colorint / 0x1000000 % 0x100),
-            r = math.floor(colorint / 0x10000 % 0x100),
-            g = math.floor(colorint / 0x100 % 0x100),
-            b = math.floor(colorint % 0x100),
-        }
-    end
-
-    if type(colorspec) == 'table' then
-        return {
-            a = (colorspec.a or 0),
-            r = (colorspec.r or 0),
-            g = (colorspec.g or 0),
-            b = (colorspec.b or 0),
-        }
-    end
+	if type(colorspec) == 'table' then
+		return {
+			a = (colorspec.a or 0),
+			r = (colorspec.r or 0),
+			g = (colorspec.g or 0),
+			b = (colorspec.b or 0),
+		}
+	end
 end
 
 --- Converts a colorspec to a #RRGGBB string ready to use in textures
@@ -252,32 +289,36 @@ end
 -- @returns A "#RRGGBB" string
 function effects_api.color_to_rgb_texture(colorspec)
 	local color = effects_api.color_to_table(colorspec) 
-	return string.format("#%2x%2x%2x", color.r, color.g, color.b)
+	return string.format("#%02X%02X%02X", color.r, color.g, color.b)
 end
 
+function effects_api.color_to_rgba_texture(colorspec)
+	local color = effects_api.color_to_table(colorspec) 
+	return string.format("#%02X%02X%02X%02X", color.r, color.g, color.b, color.a)
+end
 --- Mix colors with intensity
 -- @param valints List of colorstrings (value=) and intensities
 -- @results A colorstring representing the sum
 function effects_api.mix_color_valints(valints)
-    local total = 0.0
-    for _, v in pairs(valints) do
-        total = total + (v.intensity or 0)
-    end
+	local total = 0.0
+	for _, v in pairs(valints) do
+		total = total + (v.intensity or 0)
+	end
 
-    if total == 0 then return nil end
+	if total == 0 then return nil end
 
-    local sum = { a=0, r=0, g=0, b=0 }
-    local color
+	local sum = { a=0, r=0, g=0, b=0 }
+	local color
 
-    for _, v in pairs(valints) do
-        color = color_to_table(v.value) -- Can be done once at first when creating impact
-        sum.a = sum.a + color.a * v.intensity
-        sum.r = sum.r + color.r * v.intensity
-        sum.g = sum.g + color.g * v.intensity
-        sum.b = sum.b + color.b * v.intensity
-    end
+	for _, v in pairs(valints) do
+		color = color_to_table(v.value) -- Can be done once at first when creating impact
+		sum.a = sum.a + color.a * v.intensity
+		sum.r = sum.r + color.r * v.intensity
+		sum.g = sum.g + color.g * v.intensity
+		sum.b = sum.b + color.b * v.intensity
+	end
 
-    return { a=sum.a/total, r=sum.r/total, g=sum.g/total, b=sum.b/total }
+	return { a=sum.a/total, r=sum.r/total, g=sum.g/total, b=sum.b/total }
 end
 
 
