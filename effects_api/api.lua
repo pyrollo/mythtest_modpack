@@ -215,6 +215,9 @@ local function link_effect_to_impacts(effect)
 			if impact then
 				-- Link effect params to impact params
 				table.insert(impact.params, params)
+
+				-- Mark impact as changed (needed when restoring impacts)
+				impact.changed = true
 			else
 				-- Impact not existing, remove it to avoid further problems
 				effect.impacts[type_name] = nil
