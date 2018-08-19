@@ -1,0 +1,7 @@
+Code by Pierre-Yves Rollo (pyrollo)
+Contributors:
+
+Textures by Pierre-Yves Rollo (pyrollo)
+Except:
+mythtest_potion.png by Wuzzy
+

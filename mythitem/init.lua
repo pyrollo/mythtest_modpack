@@ -8,34 +8,43 @@ if minetest.global_exists("armor") then
 end
 
 minetest.register_tool("mythitem:ring", {
-    description = "Blind ring",
-    inventory_image = "mythitem_ring_simple.png",
-    effect_equip = {
-    	raise = 2,
-    	fall = 2,
-    	impacts = { vision=0 },
-    }
+	description = "Blind ring",
+	inventory_image = "mythitem_ring_simple.png",
+	groups = { armor_finger = 1 },
+	texture = "mythitem_transparent", 
+	preview = "mythitem_ring_armor_preview",
+	effect_equip = {
+		raise = 2,
+		fall = 2,
+		impacts = { vision=0 },
+	}
 })
 
 minetest.register_tool("mythitem:ring2", {
-    description = "Invisibility ring",
-    inventory_image = "mythitem_ring_thick.png",
-    effect_equip = {
-    	impacts = { visible=0 },
-    },
+	description = "Invisibility ring",
+	inventory_image = "mythitem_ring_thick.png",
+	groups = { armor_finger = 1 },
+	texture = "mythitem_transparent", 
+	preview = "mythitem_ring_armor_preview",
 })
 
 minetest.register_tool("mythitem:ring3", {
-    description = "Strange ring",
-    inventory_image = "mythitem_ring_gem.png",
-    effect_equip = {
-    	impacts = { texture=1 },
-    }
+	description = "Strange ring",
+	inventory_image = "mythitem_ring_gem.png",
+	groups = { armor_finger = 1 },
+	texture = "mythitem_transparent", 
+	preview = "mythitem_ring_armor_preview",
+	effect_equip = {
+		impacts = { texture=1 },
+	}
 })
 
 minetest.register_tool("mythitem:ring4", {
 	description = "Ring of darkness",
 	inventory_image = "mythitem_ring_spikes.png",
+	groups = { armor_finger = 1 },
+	texture = "mythitem_transparent", 
+	preview = "mythitem_ring_armor_preview",
 	effect_equip = {
 		impacts = { daylight = 0 },
 		raise = 1,
@@ -46,6 +55,9 @@ minetest.register_tool("mythitem:ring4", {
 minetest.register_tool("mythitem:ring5", {
 	description = "Bad ring",
 	inventory_image = "mythitem_ring_double_spikes.png",
+	groups = { armor_finger = 1 },
+	texture = "mythitem_transparent", 
+	preview = "mythitem_ring_armor_preview",
 	effect_equip = { 
 		impacts = { damage = {1, 3} }
 	}
@@ -54,13 +66,17 @@ minetest.register_tool("mythitem:ring5", {
 minetest.register_tool("mythitem:ring6", {
 	description = "Thick gem ring",
 	inventory_image = "mythitem_ring_thick_gem.png",
+	groups = { armor_finger = 1 },
+	texture = "mythitem_transparent", 
+	preview = "mythitem_ring_armor_preview",
 })
 
 minetest.register_tool("mythitem:amulet1", {
 	description = "Regeneration amulet",
 	inventory_image = "mythitem_amulet_ankh.png",
 	groups = { armor_neck = 1 },
-	texture = "mythtest_transparent", preview = "mythtest_transparent",
+	texture = "mythitem_amulet_armor_texture", 
+	preview = "mythitem_amulet_armor_preview",
 	effect_equip = {
 		impacts = { damage = {-2, 3} }
 	}
@@ -70,20 +86,32 @@ minetest.register_tool("mythitem:amulet2", {
 	description = "Jump amulet",
 	inventory_image = "mythitem_amulet_gem.png",
 	groups = { armor_neck = 1 },
-	texture = "mythtest_transparent", preview = "mythtest_transparent",
+	texture = "mythitem_amulet_armor_texture", 
+	preview = "mythitem_amulet_armor_preview",
 	effect_equip = {
 		impacts = { jump=2 },
 	}
 })
 
 minetest.register_tool("mythitem:amulet3", {
-	description = "Big gem amulet",
+	description = "Light amulet",
 	inventory_image = "mythitem_amulet_big_gem.png",
+	groups = { armor_neck = 1 },
+	texture = "mythitem_amulet_armor_texture", 
+	preview = "mythitem_amulet_armor_preview",
+	effect_equip = {
+		raise = 1,
+		fall = 3,
+		impacts = { daylight=1 },
+	}
 })
 
 minetest.register_tool("mythitem:amulet4", {
 	description = "Big amulet",
 	inventory_image = "mythitem_amulet_big.png",
+	groups = { armor_neck = 1 },
+	texture = "mythitem_amulet_armor_texture", 
+	preview = "mythitem_amulet_armor_preview",
 })
 
 minetest.register_node("mythitem:darkstone", {
@@ -114,6 +142,17 @@ minetest.register_tool("mythitem:wand", {
 		duration = 10,
 		impacts = { texture = { colorize = "#00FF0080" }, damage = { -10, 1 } },
 		id = 'use_on:mythitem:wand',
+	},
+	on_use = effects_api.on_use_tool_callback,
+})
+
+minetest.register_craftitem("mythitem:potion", {
+	description = "Poison",
+	inventory_image = "mythitem_potion.png",
+	effect_use = {
+		raise = 1,
+		impacts = { damage = { 1, 1 } },
+		stopondeath = true,
 	},
 	on_use = effects_api.on_use_tool_callback,
 })
