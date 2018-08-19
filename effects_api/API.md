@@ -1,3 +1,6 @@
+**NOT UP TO DATE AT ALL!**
+Needs a total rewrite
+
 # Introduction
 This API is for managing lasting effects, not instant effects.
 

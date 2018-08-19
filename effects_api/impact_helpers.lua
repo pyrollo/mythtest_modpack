@@ -16,7 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 --]]
 
---- Extract values and intensities from impact params array
+--- get_valints
+-- Extract values and intensities from impact params array
 -- @param params An impact param array
 -- @param index Index of the value to be exported from @params entries
 -- @returns An array of { value=, intensity= }
@@ -31,7 +32,8 @@ function effects_api.get_valints(params, index)
 	return result
 end
 
---- Appends a values and intensities list to another
+--- append_valints
+-- Appends a values and intensities list to another
 -- @param valints List where extra valints will be append
 -- @param extravalints Extra valints to append
 function effects_api.append_valints(valints, extravalints)
@@ -40,7 +42,8 @@ function effects_api.append_valints(valints, extravalints)
 	end
 end
 
---- Computes a sum of values with intensities
+--- multiply_valints
+-- Computes a sum of values with intensities
 -- @param valints Value/Intensity list
 -- @returns Resulting sum
 function effects_api.multiply_valints(valints)
@@ -51,7 +54,8 @@ function effects_api.multiply_valints(valints)
 	return result
 end
 
---- Computes a product of values with intensities
+--- sum_valints
+-- Computes a product of values with intensities
 -- @param valints Value/Intensity list
 -- @returns Resulting product
 function effects_api.sum_valints(valints)
@@ -62,8 +66,35 @@ function effects_api.sum_valints(valints)
 	return result
 end
 
--- Color management
+--- superpose_valints
+-- Computes a ratio superposition (like if each ratio was a greyscale value and
+-- intensities where alpha chanel).
+-- @param valints Value/Intensity list of ratios (values should go from 0 to 1)
+-- @param base_value Base ratio value on which valints are superposed
+-- @returns Resulting ration
+function effects_api.superpose_valints(valints, base_value)
+	local default_intensity = 1.0
+	local intensity_sum = 0.0
+	local value_sum = 0.0
+	for _, valint in ipairs(valints) do
+		if valint.intensity > 0 then
+			if valint.intensity > 1 then
+				default_intensity = 0
+				intensity_sum = intensity_sum + 1
+				value_sum = value_sum + valint.value
+			else
+				default_intensity = default_intensity * (1 - valint.intensity)
+				intensity_sum = intensity_sum + valint.intensity
+				value_sum = value_sum + valint.value * valint.intensity
+			end
+		end
+	end
+	intensity_sum = intensity_sum + default_intensity
+	value_sum = value_sum + base_value * default_intensity
+	return value_sum / intensity_sum
+end
 
+-- Color management
 local stdcolors = {
 	aliceblue              = 0xf0f8ff,
 	antiquewhite           = 0xfaebd7,
@@ -214,7 +245,8 @@ local stdcolors = {
     yellowgreen            = 0x9acd32,
 }
 
---- Converts a colorstring to a {r,g,b,a} table.
+--- color_to_table
+-- Converts a colorstring to a {r,g,b,a} table.
 -- @param colorspec Can be a standard color name, a 32 bit integer or a table
 -- @returns A {r,g,b,a} table
 function effects_api.color_to_table(colorspec)
@@ -284,7 +316,8 @@ function effects_api.color_to_table(colorspec)
 	end
 end
 
---- Converts a colorspec to a #RRGGBB string ready to use in textures
+--- color_to_rgb_texture
+-- Converts a colorspec to a #RRGGBB string ready to use in textures
 -- @param colorspec Can be a standard color name, a 32 bit integer or a table
 -- @returns A "#RRGGBB" string
 function effects_api.color_to_rgb_texture(colorspec)
@@ -296,6 +329,50 @@ function effects_api.color_to_rgba_texture(colorspec)
 	local color = effects_api.color_to_table(colorspec) 
 	return string.format("#%02X%02X%02X%02X", color.r, color.g, color.b, color.a)
 end
+
+--- superpose_color_valints
+-- Computes a color superposition with alpha channel and intensity (actually,
+-- intensity is considered as a factor on alpha channel)
+-- @param valints Value/Intensity list of colors
+-- @param background_color Background color (default none)
+-- @returns Resulting color
+function effects_api.superpose_color_valints(valints, background_color)
+	local bg_color = { r=0, v=0, b=0, a=0 }
+	if background_color then
+		bg_color = effects_api.color_to_table(background_color)
+	end
+	local bg_intensity = 1.0
+	local intensity_sum = 0.0
+	local color = { r=0, g=0, b=0, a=0 }
+	local color_val
+
+	for _, valint in ipairs(valints) do
+		if valint.intensity > 0 then
+			color_val = effects_api.color_to_table(valint.value)
+			if valint.intensity > 1 then
+				bg_intensity = 0
+				color.r = color.r + color_val.r * color_val.a
+				color.g = color.g + color_val.g * color_val.a
+				color.b = color.b + color_val.b * color_val.a
+				intensity_sum = intensity_sum + color_val.a
+			else
+				bg_intensity = bg_intensity * (1 - valint.intensity)
+				color.r = color.r + color_val.r * color_val.a * valint.intensity
+				color.g = color.g + color_val.g * color_val.a * valint.intensity
+				color.b = color.b + color_val.b * color_val.a * valint.intensity
+				intensity_sum = intensity_sum + color_val.a * valint.intensity
+			end
+		end
+	end
+
+	intensity_sum = intensity_sum + bg_color.a * bg_intensity
+	color.r = (color.r + bg_color.r * bg_color.a * bg_intensity) * intensity_sum
+	color.g = (color.g + bg_color.g * bg_color.a * bg_intensity) * intensity_sum
+	color.b = (color.b + bg_color.b * bg_color.a * bg_intensity) * intensity_sum
+	-- TODO: color.a = ? --
+	return values / intensities
+end
+
 --- Mix colors with intensity
 -- @param valints List of colorstrings (value=) and intensities
 -- @results A colorstring representing the sum
