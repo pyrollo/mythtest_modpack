@@ -63,6 +63,7 @@ effects_api.register_impact_type('player', 'gravity', {
 -- 1: Health points lost (+) or gained (-) per period
 -- 2: Period length in seconds
 -- TODO: Use a different armor/damage group for magic ?
+-- TODO: Or adapt damage to armor group
 effects_api.register_impact_type({'player', 'mob'}, 'damage', {
 	step = function(impact, dtime)
 		for _, params in pairs(impact.params) do
@@ -80,31 +81,16 @@ effects_api.register_impact_type({'player', 'mob'}, 'damage', {
 	end,
 })
 
--- Visible (WIP)
-----------
--- Params :
--- TODO:1: Vision multiplier [0..1]. 0 = Blind, 1 and above = normal. Default: 1
-
-effects_api.register_impact_type('player', 'visible', {
-    reset = function(impact)
-			impact.subject:set_properties({is_visible = 1 })
-		end,
-	update = function(impact)
-			local vision = effects_api.multiply_valints(
-				effects_api.get_valints(impact.params, 1))
-			impact.subject:set_properties({is_visible = vision >=1 })
-		end,
-})
-
--- Daylight (WIP)
+-- Daylight
 -----------
 -- Params :
--- 1: Daylight multiplier [0..1]. 0 = Dark, 1 = normal. Default: 1
--- TODO : [-1..0] : same but lightens.
+-- 1: Daylight aimed [0..1]. 0 = Dark, 1 = Full daylight
 
 -- Function computing default daynight ratio (there is no (yet?) any lua api
 -- function to do that). More or less LUA version of C++ time_to_daynight_ratio
 -- funtion from minetest/src/daynightratio.h
+
+-- TODO: Open a feature request on minetest to expose actual daylight ratio
 
 local function get_default_daynight_ratio()
 	local t = minetest.get_timeofday() * 24000
@@ -127,17 +113,32 @@ local function get_default_daynight_ratio()
 	return 1
 end
 
--- TODO:revoir comment calculer ca. Il faut que l'intensite indique l'influence vers le jour ou la nuit
 effects_api.register_impact_type('player', 'daylight', {
 	reset = function(impact)
 			impact.subject:override_day_night_ratio(nil)
 		end,
 	update = function(impact)
-			local baseratio = get_default_daynight_ratio()
-			local daylight = effects_api.multiply_valints(
-				effects_api.get_valints(impact.params, 1))
-			impact.subject:override_day_night_ratio(daylight)
---			impact.subject:override_day_night_ratio(get_default_daynight_ratio())
+			local default = 1.0
+			local intensities = 0.0
+			local values = 0.0
+			for _, valint in pairs(effects_api.get_valints(impact.params, 1)) do
+				if valint.intensity > 0 then
+					if valint.intensity > 1 then
+						default = 0
+						intensities = intensities + 1
+						values = values + valint.value
+					else
+						default = default * (1-valint.intensity)
+						intensities = intensities + valint.intensity
+						values = values + valint.value * valint.intensity
+					end
+				end
+			end
+			intensities = intensities + default
+			if default then
+				values = values + get_default_daynight_ratio() * default
+			end
+			impact.subject:override_day_night_ratio(values / intensities)
 		end,
 })
 
