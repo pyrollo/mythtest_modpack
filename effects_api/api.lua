@@ -22,10 +22,6 @@
 -- Name of the players meta in which is saved effects data
 local meta_key = "effects_api:active_effects"
 
--- World subject
-local world = { effects = {}, impacts = {}, type = 'world', string = 'World' }
-effects_api.world = world
-
 -- Effect phases
 ----------------
 
@@ -122,10 +118,11 @@ end
 -----------
 
 local player_data = {}
+local world = { effects = {}, impacts = {}, type = 'world', string = 'World' }
+effects_api.world = world
 
 -- Return data storage for given subject:
 -- For players, data is stored in the player_data table indexed by player name.
--- TODO: Free player_data entry when player is leaving
 -- For mobs, data is stored in effects_api field of the LUAEntity table.
 -- For world, data is stored in world local table.
 local function data(subject)
@@ -171,6 +168,13 @@ local function data(subject)
 end
 
 effects_api.get_storage_for_subject = data
+
+-- Clear player storage on leave
+minetest.register_on_leaveplayer(function(player)
+	if player.get_player_name then
+		player_data[player:get_player_name()] = nil
+	end
+end)
 
 -- Effect object
 ----------------
@@ -225,7 +229,6 @@ function Effect:change_intensity(intensity)
 		self.changed = true
 	end
 end
-
 
 --- step
 -- Performs a step of calculation for the effect
@@ -310,9 +313,6 @@ function Effect:set_conditions(conditions)
 	end
 end
 
--- player dead ?
---minetest.register_on_respawnplayer(func(ObjectRef))`
-
 -- Is the subject equiped with item_name?
 function effects_api.is_equiped(subject, item_name)
 	-- Check wielded item
@@ -334,7 +334,6 @@ function effects_api.is_near_nodes(subject, near_node)
 	for hash, _ in pairs(near_node.active_pos) do
 		pos = minetest.get_position_from_hash(hash)
 
-		-- TODO:ensure radius computation is the same that get_objects_in_radius
 		if (pos.x - subject_pos.x) * (pos.x - subject_pos.x) +
 		   (pos.y - subject_pos.y) * (pos.y - subject_pos.y) +
 		   (pos.z - subject_pos.z) * (pos.z - subject_pos.z) > radius2
@@ -385,6 +384,17 @@ function Effect:check_conditions()
 
 	-- All conditions fulfilled
 	return true
+end
+
+function effects_api.on_dieplayer(player)
+	local data = data(player)
+	if data then
+		for index, effect in pairs(data.effects) do
+			if effect.stopondeath then
+				effect:stop()
+			end
+		end
+	end
 end
 
 -- TODO:
@@ -453,25 +463,25 @@ end
 -- Effects persistance
 ----------------------
 
---Probleme... le stockage.
--- Player : on join / on leave + periodiquement (players_connected) dans un attribut.
--- Vérifier en cas de crash que les attributs sont bien sauvés
--- Mob : si le serveur crash, pas moyen de gérer. Les données peuvent être sauvés pendant get_staticdata et on_activate
--- World : minetest.get_mod_storage()
+-- How effect data are stored:
+-- Player: Serialized in a player attribute (In V5, it will be possible to use
+--         StorageRef for players and entities)
+-- Mob: (:TODO:)
+-- World: minetest.get_mod_storage() (:TODO:)
 
--- En v5, on va pouvoir utiliser le StorageRef du joueur et des entités.
+-- Periodically, players and world effect are saved in case of server crash
 
--- Effects are loaded/saved on player join/leave and every second in case of
--- server crash.
+-- TODO:Check that attributes are saved in case of server crash
+-- TODO:Manage entity persistance with get_staticdata and on_activate
 
 function effects_api.serialize_effects(subject)
 	local data = data(subject)
+	if not data then return end -- Not a suitable subject
+
 	local effects = table.copy(data.effects)
 
-	-- remove subject references from data to be serialized
-	for _, effect in pairs(effects) do
-		effect.subject = nil
-	end
+	-- remove subject references from data to be serialized (not serializable)
+	for _, effect in pairs(effects) do effect.subject = nil	end
 
 	return minetest.serialize(effects)
 end
@@ -513,7 +523,6 @@ function effects_api.save_all_players_data()
 		effects_api.save_player_data(player)
 	end
 end
---]]
 
 -- Effects management
 ---------------------
@@ -530,7 +539,7 @@ end
 --	fall = x,     -- Time it takes to fall, after end to no intensity
 --  duration = x, -- Duration of maximum intensity in seconds (default always)
 --  distance = x, -- In case of effect associated to a node, distance of action
---	stopatdeath = true, --?
+--	stopondeath = true, --?
 --}
 --
 -- impacts = { impactname = parameter, impactname2 = { param1, param2 }, ... }
@@ -597,8 +606,8 @@ function effects_api.get_effect_by_id(subject, id)
 end
 
 --- dump_effects
--- Dumps all effects affecting a player into a string
--- @param player_name Name of the player
+-- Dumps all effects affecting a subject into a string
+-- @param subject Subject's ObjectRef
 -- @returns String describing effects
 function effects_api.dump_effects(subject)
 	local str = ""
@@ -619,11 +628,6 @@ function effects_api.dump_effects(subject)
 		end
 --			str=str..minetest.serialize(effect)
 	end
---  else
---		for player_name, _ in pairs(active_player_effects) do
---			str=str..effects_api.dump_effects(player_name)
---		end
---	end
 	return str
 end
 
