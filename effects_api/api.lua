@@ -132,7 +132,6 @@ setmetatable(subject_data, {__mode = "k"})
 
 -- Return data storage for subject
 local function data(subject)
-
 	if subject_data[subject] then return subject_data[subject] end
 
 	-- Create a data entry for new subject
@@ -191,8 +190,7 @@ function Effect:new(subject, fields)
 		table.insert(data.effects, self)
 	end
 
-	-- Link to impacts
-	-- Create / link impacts
+	-- Create / link to impacts
 	if self.impacts then
 		for type_name, params in pairs(self.impacts) do
 			-- Normalise params so they are all tables
@@ -208,23 +206,23 @@ function Effect:new(subject, fields)
 				local impact_type = effects_api.get_impact_type(data.type,
 					type_name)
 
-				impact = {
-					vars = table.copy(impact_type.vars or {}),
-					params = {},
-					subject = self.subject,
-					type = type_name,
-				}
-				data.impacts[type_name] = impact
+				if impact_type then
+					impact = {
+						vars = table.copy(impact_type.vars or {}),
+						params = {},
+						subject = self.subject,
+						type = type_name,
+					}
+					data.impacts[type_name] = impact
+				end
 			end
 
 			if impact then
 				-- Link effect params to impact params
-				table.insert(impact.params, params)
-
-				-- Mark impact as changed (needed when restoring impacts)
 				impact.changed = true
+				table.insert(impact.params, params)
 			else
-				-- Impact not existing, remove it to avoid further problems
+				-- Impact type not existing, remove it to avoid further problems
 				self.impacts[type_name] = nil
 			end
 		end
