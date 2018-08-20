@@ -337,7 +337,7 @@ end
 -- @param background_color Background color (default none)
 -- @returns Resulting color
 function effects_api.superpose_color_valints(valints, background_color)
-	local bg_color = { r=0, v=0, b=0, a=0 }
+	local bg_color = { r=0, g=0, b=0, a=0 }
 	if background_color then
 		bg_color = effects_api.color_to_table(background_color)
 	end
@@ -366,11 +366,12 @@ function effects_api.superpose_color_valints(valints, background_color)
 	end
 
 	intensity_sum = intensity_sum + bg_color.a * bg_intensity
-	color.r = (color.r + bg_color.r * bg_color.a * bg_intensity) * intensity_sum
-	color.g = (color.g + bg_color.g * bg_color.a * bg_intensity) * intensity_sum
-	color.b = (color.b + bg_color.b * bg_color.a * bg_intensity) * intensity_sum
+	color.r = (color.r + bg_color.r * bg_color.a * bg_intensity) / intensity_sum
+	color.g = (color.g + bg_color.g * bg_color.a * bg_intensity) / intensity_sum
+	color.b = (color.b + bg_color.b * bg_color.a * bg_intensity) / intensity_sum
 	-- TODO: color.a = ? --
-	return values / intensities
+	color.a = 0xff
+	return color
 end
 
 --- Mix colors with intensity
