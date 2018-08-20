@@ -91,6 +91,7 @@ effects_api.register_impact_type({'player', 'mob'}, 'damage', {
 -- funtion from minetest/src/daynightratio.h
 
 -- TODO: Open a feature request on minetest to expose actual daylight ratio
+-- TODO: Impact should be considered as changed when default daylight changes
 
 local function get_default_daynight_ratio()
 	local t = minetest.get_timeofday() * 24000
@@ -118,27 +119,10 @@ effects_api.register_impact_type('player', 'daylight', {
 			impact.subject:override_day_night_ratio(nil)
 		end,
 	update = function(impact)
-			local default = 1.0
-			local intensities = 0.0
-			local values = 0.0
-			for _, valint in pairs(effects_api.get_valints(impact.params, 1)) do
-				if valint.intensity > 0 then
-					if valint.intensity > 1 then
-						default = 0
-						intensities = intensities + 1
-						values = values + valint.value
-					else
-						default = default * (1-valint.intensity)
-						intensities = intensities + valint.intensity
-						values = values + valint.value * valint.intensity
-					end
-				end
-			end
-			intensities = intensities + default
-			if default then
-				values = values + get_default_daynight_ratio() * default
-			end
-			impact.subject:override_day_night_ratio(values / intensities)
+			impact.subject:override_day_night_ratio(
+				effects_api.superpose_valints(
+					effects_api.get_valints(impact.params, 1),
+					get_default_daynight_ratio()))
 		end,
 })
 
@@ -181,6 +165,8 @@ effects_api.register_impact_type('player', 'vision', {
 -- 1-Colorize 
 -- 2-Opacity [0..1]
 
+-- TODO:Texture problems with players and 3d armor and with mobs redo chickens
+
 effects_api.register_impact_type({'player', 'mob'}, 'texture', {
 	vars = { initial_textures = nil },
 	reset = function(impact)
@@ -193,7 +179,8 @@ effects_api.register_impact_type({'player', 'mob'}, 'texture', {
 	update = function(impact)
 
 			local modifier = ""
-			local color
+			local color = effects_api.superpose_color_valints(
+					effects_api.get_valints(impact.params, 1))
 			for _, param in pairs(impact.params) do
 				if param.colorize and param.intensity then
 					color = effects_api.color_to_table(param.colorize)
