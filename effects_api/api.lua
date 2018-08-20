@@ -45,6 +45,15 @@ local phase_fall  = 3
 local phase_end  = 4
 -- This is the terminal phase. Effect in this phase are deleted.
 
+-- Helper
+---------
+
+local function calliffunc(fct, ...)
+	if type(fct) == 'function' then
+		return fct(...)
+	end
+end
+
 -- Impact registry
 ------------------
 
@@ -124,13 +133,10 @@ setmetatable(subject_data, {__mode = "k"})
 -- Return data storage for subject
 local function data(subject)
 
-	if subject_data[subject] then
-		return subject_data[subject]
-	end
+	if subject_data[subject] then return subject_data[subject] end
 
+	-- Create a data entry for new subject
 	local subject_type, subject_desc
-
-	-- Determine subject type and description
 
 	if subject.is_player and subject:is_player() then
 		subject_type = 'player'
@@ -161,18 +167,38 @@ effects_api.get_storage_for_subject = data
 local Effect = {}
 Effect.__index = Effect
 
--- To be called only once, when a new impact is created in memory
-local function link_effect_to_impacts(effect)
+function Effect:new(subject, fields)
+	local data = data(subject)
+	if data == nil then return nil end
 
-	local data = data(effect.subject)
+	self = table.copy(fields)
+	setmetatable(self, Effect)
 
+	self.elapsed_time = self.elapsed_time or 0
+	self.intensity = 0
+	self.phase = self.phase or phase_raise
+	self.subject = subject
+
+	-- Duration condition
+	if self.duration then
+		self:set_conditions( { duration = self.duration } )  -- - ( effect.fall or 0 )
+	end
+
+	-- Affect to subject
+	if self.id then
+		data.effects[self.id] = self
+	else
+		table.insert(data.effects, self)
+	end
+
+	-- Link to impacts
 	-- Create / link impacts
-	if effect.impacts then
-		for type_name, params in pairs(effect.impacts) do
+	if self.impacts then
+		for type_name, params in pairs(self.impacts) do
 			-- Normalise params so they are all tables
 			if type(params) ~= 'table' then
 				params = { params }
-				effect.impacts[type_name] = params
+				self.impacts[type_name] = params
 			end
 
 			local impact = data.impacts[type_name]
@@ -185,7 +211,7 @@ local function link_effect_to_impacts(effect)
 				impact = {
 					vars = table.copy(impact_type.vars or {}),
 					params = {},
-					subject = effect.subject,
+					subject = self.subject,
 					type = type_name,
 				}
 				data.impacts[type_name] = impact
@@ -199,12 +225,14 @@ local function link_effect_to_impacts(effect)
 				impact.changed = true
 			else
 				-- Impact not existing, remove it to avoid further problems
-				effect.impacts[type_name] = nil
+				self.impacts[type_name] = nil
 			end
 		end
 	end
+	return self
 end
 
+-- TODO: Clip value to 0-1
 function Effect:change_intensity(intensity)
 	if self.intensity ~= intensity then
 		self.intensity = intensity
@@ -223,13 +251,16 @@ function Effect:step(dtime)
 	self.elapsed_time = self.elapsed_time + dtime
 
 	-- Effect conditions
-	if not self:check_conditions() then self:stop() end
+	if (self.phase == phase_init or self.phase == phase_raise
+	   or self.phase == phase_still) and not self:check_conditions() then
+		self:stop()
+	end
 
 	-- Phase management
 	if self.phase == phase_raise then
 		if (self.raise or 0) > 0 then
 		self:change_intensity(self.intensity + dtime / self.raise)
-			if self.intensity > 1 then self.phase = phase_still end
+			if self.intensity >= 1 then self.phase = phase_still end
 		else
 			self.phase = phase_still
 		end
@@ -240,7 +271,7 @@ function Effect:step(dtime)
 	if self.phase == phase_fall then
 		if (self.fall or 0) > 0 then
 			self:change_intensity(self.intensity - dtime / self.fall)
-			if self.intensity < 0 then self.phase = phase_end end
+			if self.intensity <= 0 then self.phase = phase_end end
 		else
 			self.phase = phase_end
 		end
@@ -344,12 +375,13 @@ function Effect:check_conditions()
 	end
 
 	-- Next conditions are never true for World subject
-	if self.subject == world and (
-		self.conditions.equiped_with or
-		self.conditions.near_node)
-	then
-		return false
-	end 
+--	if self.subject == world and (
+--		self.conditions.equiped_with or
+--		self.conditions.near_node)
+--	then
+--		return false
+--	end
+
 	-- Check equipment
 	if self.conditions.equiped_with and
 	   not effects_api.is_equiped(self.subject,self.conditions.equiped_with)
@@ -409,6 +441,7 @@ function effects_api.step(dtime)
 
 			-- Impacts
 			for impact_name, impact in pairs(data.impacts) do
+				-- TODO:directly store reference to impact type?
 				local impact_type = effects_api.get_impact_type(
 					data.type, impact_name)
 
@@ -424,22 +457,17 @@ function effects_api.step(dtime)
 
 				if remains then
 					-- Update impact if changed (effect intensity changed)
-					if impact.changed
-					   and type(impact_type.update) == 'function' then
-						impact_type.update(impact, data)
+					if impact.changed then
+						calliffunc(impact_type.update, impact, data)
 					end
 
 					-- Step
-					if type(impact_type.step) == 'function' then
-						impact_type.step(impact, dtime, data)
-					end
+					calliffunc(impact_type.step, impact, dtime, data)
 
 					impact.changed = false
 				else
 					-- Ends impact
-					if type(impact_type.reset) == 'function' then
-						impact_type.reset(impact, data)
-					end
+					calliffunc(impact_type.reset, impact, data)
 					data.impacts[impact_name] = nil
 				end
 			end
@@ -486,15 +514,12 @@ function effects_api.deserialize_effects(subject, serialized)
 	end
 
 	-- Deseralization
-	data.effects = minetest.deserialize(serialized) or {}
+	local effects = minetest.deserialize(serialized) or {}
 
-	for _, effect in pairs(data.effects) do
-		effect.subject = subject
+	for _, fields in pairs(effects) do
+		local effect = Effect:new(subject, fields)
 		effect.break_time = true
-		setmetatable(effect, Effect)
-		link_effect_to_impacts(effect)
 	end
-
 end
 
 function effects_api.save_player_data(player)
@@ -557,29 +582,7 @@ function effects_api.affect(subject, definition)
 	end
 
 	-- Instanciation
-	local effect = table.copy(definition)
-	setmetatable(effect, Effect)
-
-	effect.subject = subject
-	effect.elapsed_time = 0
-	effect.phase = phase_raise
-	effect.intensity = 0
-
-	-- Duration condition
-	if effect.duration then
-		effect:set_conditions( { duration = effect.duration } )  -- - ( effect.fall or 0 )
-	end
-
-	-- Affect to subject
-	if effect.id then
-		data.effects[definition.id] = effect
-	else
-		table.insert(data.effects, effect)
-	end
-
-	-- Link to impacts
-	link_effect_to_impacts(effect)
-
+	local effect = Effect:new(subject, definition)
 	return effect
 end
 
