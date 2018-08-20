@@ -33,9 +33,7 @@ dofile(effects_api.path.."/impact_helpers.lua")
 -- Main loop
 minetest.register_globalstep(function(dtime)
 	effects_api.players_wield_hack(dtime)
-	for _,player in ipairs(minetest.get_connected_players()) do
-		effects_api.effect_step(player, dtime)
-	end
+	effects_api.step(dtime)
 end)
 
 -- On die player : stop effects that are marked stopondeath = true

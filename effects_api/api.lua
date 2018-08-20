@@ -117,64 +117,43 @@ end
 -- Subjects
 -----------
 
-local player_data = {}
-local world = { effects = {}, impacts = {}, type = 'world', string = 'World' }
-effects_api.world = world
+local subject_data = {}
+-- Automatically clean unused data by using a weak key table
+setmetatable(subject_data, {__mode = "k"})
 
--- Return data storage for given subject:
--- For players, data is stored in the player_data table indexed by player name.
--- For mobs, data is stored in effects_api field of the LUAEntity table.
--- For world, data is stored in world local table.
+-- Return data storage for subject
 local function data(subject)
 
-	-- Player subjects
-	if subject.is_player and subject:is_player() then
-		local player_name = subject:get_player_name()
-		if player_data[player_name] then return player_data[player_name] end
-		player_data[player_name] = {
-			effects={}, impacts={},
-			type = 'player', string = 'Player "'..player_name..'"',
-			defaults = {} }
-		return player_data[player_name]
+	if subject_data[subject] then
+		return subject_data[subject]
 	end
 
-	-- Mob subjects
+	local subject_type, subject_desc
+
+	-- Determine subject type and description
+
+	if subject.is_player and subject:is_player() then
+		subject_type = 'player'
+		subject_desc = 'Player "'..subject:get_player_name()..'"'
+	end
+
 	local entity = subject:get_luaentity()
 	if entity and entity.type then
-		if entity.effects_data then return entity.effects_data end
+		subject_type = 'mob'
+		subject_desc = 'Mob "'..entity.name..'"'
+	end
 
-		entity.effects_data = {
+	if subject_type then
+		subject_data[subject] = {
 			effects={}, impacts={},
-			type = 'mob', string = 'Mob "'..entity.name..'"'}
-
-		-- For mobs, hacks the on_step to insert effects_api mechanism
-		if entity.on_step then
-			entity.effects_data.on_step = entity.on_step
-			entity.on_step = function(entity, dtime)
-				effects_api.effect_step(entity.object, dtime)
-				entity.effects_data.on_step(entity, dtime)
-			end
-		else
-			entity.on_step = function(entity, dtime)
-				effects_api.effect_step(entity, dtime)
-			end
-		end
-		return entity.effects_data
+			type = subject_type, string = subject_desc,
+			defaults = {} }
 	end
 
-	if subject == world then
-		return world
-	end
+	return subject_data[subject]
 end
 
 effects_api.get_storage_for_subject = data
-
--- Clear player storage on leave
-minetest.register_on_leaveplayer(function(player)
-	if player.get_player_name then
-		player_data[player:get_player_name()] = nil
-	end
-end)
 
 -- Effect object
 ----------------
@@ -408,57 +387,62 @@ end
 -- Main loop
 ------------
 
-function effects_api.effect_step(subject, dtime)
-	local data = data(subject)
---if data.type ~= 'player' then
---print(dump(data))
---end
-	-- Effects
-	for index, effect in pairs(data.effects) do
-		-- Compute effect elapsed_time, phase and intensity
-		effect:step(dtime)
+function effects_api.step(dtime)
 
-		-- Effect ends ?
-		if effect.phase == phase_end then
-			-- Delete effect
-			data.effects[index] = nil
-		end
-	end
-
-	-- Impacts
-	for impact_name, impact in pairs(data.impacts) do
-		local impact_type = effects_api.get_impact_type(
-			data.type, impact_name)
-
-		-- Check there are still effects using this impact
-		local remains = false
-		for key, params in pairs(impact.params) do
-			if params.ended then
-				impact.params[key] = nil
-			else
-				remains = true
-			end
-		end
-
-		if remains then
-			-- Update impact if changed (effect intensity changed)
-			if impact.changed
-			   and type(impact_type.update) == 'function' then
-				impact_type.update(impact, data)
-			end
-
-			-- Step
-			if type(impact_type.step) == 'function' then
-				impact_type.step(impact, dtime, data)
-			end
-
-			impact.changed = false
+	for subject, data in pairs(subject_data) do
+		-- Check subject existence
+		if subject:get_properties() == nil then
+			print("Removing data for "..data.string..".")
+			subject_data[subject] = nil
 		else
-			-- Ends impact
-			if type(impact_type.reset) == 'function' then
-				impact_type.reset(impact, data)
+			-- Effects
+			for index, effect in pairs(data.effects) do
+				-- Compute effect elapsed_time, phase and intensity
+				effect:step(dtime)
+
+				-- Effect ends ?
+				if effect.phase == phase_end then
+					-- Delete effect
+					data.effects[index] = nil
+				end
 			end
-			data.impacts[impact_name] = nil
+
+			-- Impacts
+			for impact_name, impact in pairs(data.impacts) do
+				local impact_type = effects_api.get_impact_type(
+					data.type, impact_name)
+
+				-- Check there are still effects using this impact
+				local remains = false
+				for key, params in pairs(impact.params) do
+					if params.ended then
+						impact.params[key] = nil
+					else
+						remains = true
+					end
+				end
+
+				if remains then
+					-- Update impact if changed (effect intensity changed)
+					if impact.changed
+					   and type(impact_type.update) == 'function' then
+						impact_type.update(impact, data)
+					end
+
+					-- Step
+					if type(impact_type.step) == 'function' then
+						impact_type.step(impact, dtime, data)
+					end
+
+					impact.changed = false
+				else
+					-- Ends impact
+					if type(impact_type.reset) == 'function' then
+						impact_type.reset(impact, data)
+					end
+					data.impacts[impact_name] = nil
+				end
+			end
 		end
 	end
 end
