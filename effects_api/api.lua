@@ -174,7 +174,7 @@ function Effect:new(subject, fields)
 	setmetatable(self, Effect)
 
 	self.elapsed_time = self.elapsed_time or 0
-	self.intensity = 0
+	self.intensity = self.intensity or 0
 	self.phase = self.phase or phase_raise
 	self.subject = subject
 
