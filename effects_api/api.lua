@@ -238,43 +238,16 @@ function Effect:new(subject, definition)
 		table.insert(data.effects, self)
 	end
 
-	-- Create / link to impacts
-	if self.impacts then
-		for type_name, params in pairs(self.impacts) do
-			-- Normalise params so they are all tables
-			if type(params) ~= 'table' then
-				params = { params }
-				self.impacts[type_name] = params
-			end
+	-- Create impacts
+	local impacts = self.impacts
+	self.impacts = {}
 
-			local impact = data.impacts[type_name]
-
-			if not impact then
-				-- First effect having this impact on subject : create impact
-				local impact_type = effects_api.get_impact_type(data.type,
-					type_name)
-
-				if impact_type then
-					impact = {
-						vars = table.copy(impact_type.vars or {}),
-						params = {},
-						subject = self.subject,
-						type = type_name,
-					}
-					data.impacts[type_name] = impact
-				end
-			end
-
-			if impact then
-				-- Link effect params to impact params
-				impact.changed = true
-				table.insert(impact.params, params)
-			else
-				-- Impact type not existing, remove it to avoid further problems
-				self.impacts[type_name] = nil
-			end
+	if impacts then
+		for type_name, params in pairs(impacts) do
+			self:add_impact(type_name, params)
 		end
 	end
+
 	return self
 end
 
@@ -291,6 +264,84 @@ function Effect:change_intensity(intensity)
 	end
 end
 
+--- add_impact
+-- Add a new impact to effect
+-- @param type_name Impact type name
+-- @param params Parameters of the impact
+
+function Effect:add_impact(type_name, params)
+	local data = data(self.subject)
+	local impact_type = effects_api.get_impact_type(data.type, type_name)
+
+	-- Impact type unknown or not for this type of subject
+	if not impact_type then	return end
+
+	-- Add impact to effect
+	if type(params) == 'table' then
+		self.impacts[type_name] = table.copy(params)
+	else
+		self.impacts[type_name] = { params }
+	end
+
+	-- Link effect to subject impact
+	local impact = data.impacts[type_name]
+	if not impact then
+		-- First effect having this impact on subject : create impact
+		impact = {
+			vars = table.copy(impact_type.vars or {}),
+			params = {},
+			subject = self.subject,
+			type = type_name,
+		}
+		data.impacts[type_name] = impact
+	end
+
+	-- Link effect params to impact params
+	impact.changed = true
+	table.insert(impact.params, self.impacts[type_name])
+end
+
+--- remove_impact
+-- Remove impact from effect
+-- @param type_name Impact type name
+function Effect:remove_impact(type_name)
+	if not self.impacts[type_name] then return end
+
+	local data = data(self.subject)
+
+	-- Mark subject impact as ended for this effect
+	self.impacts[type_name].ended = true
+	data.impacts[type_name].changed = true
+
+	-- Detach impact params from effect
+	self.impacts[type_name] = nil
+end
+
+--- stop
+-- Stops effect, with optional fall phase
+function Effect:stop()
+	if self.phase == phase_raise or
+	   self.phase == phase_still then
+		self.phase = phase_fall
+	end
+end
+
+--- start
+-- Starts or restarts effect if it's in fall or end phase
+function Effect:start()
+	if self.phase == phase_init or
+	   self.phase == phase_fall or
+	   self.phase == phase_end then
+		self.phase = phase_raise
+	end
+end
+
+-- Restart is the same
+Effect.restart = Effect.start
+
+-- Effect step
+--------------
+
 --- step
 -- Performs a step of calculation for the effect
 -- @param dtime Time elapsed since last step
@@ -305,6 +356,11 @@ function Effect:step(dtime)
 	if (self.phase == phase_init or self.phase == phase_raise
 	   or self.phase == phase_still) and not self:check_conditions() then
 		self:stop()
+	end
+
+	-- End effects that have no impact
+	if not next(self.impacts, nil) then
+		self.phase = phase_end
 	end
 
 	-- Phase management
@@ -329,7 +385,7 @@ function Effect:step(dtime)
 	end
 
 	if self.phase == phase_end then self:change_intensity(0) end
-	
+
 	-- Propagate to impacts (intensity and end)
 	for impact_name, impact in pairs(self.impacts) do
 		if impact.intensity ~= self.intensity then
@@ -341,28 +397,6 @@ function Effect:step(dtime)
 		end
 	end
 end
-
---- stop
--- Stops effect, with optional fall phase
-function Effect:stop()
-	if self.phase == phase_raise or
-	   self.phase == phase_still then
-		self.phase = phase_fall
-	end
-end
-
---- start
--- Starts or restarts effect if it's in fall or end phase
-function Effect:start()
-	if self.phase == phase_init or
-	   self.phase == phase_fall or
-	   self.phase == phase_end then
-		self.phase = phase_raise
-	end
-end
-
--- Restart is the same
-Effect.restart = Effect.start
 
 -- Effect conditions check
 --------------------------
@@ -526,7 +560,6 @@ minetest.register_globalstep(function(dtime)
 
 						-- Step
 						calliffunc(impact_type.step, impact, dtime, data)
-
 						impact.changed = false
 					else
 						-- Ends impact
@@ -597,7 +630,7 @@ end
 minetest.after(save_interval, periodic_save)
 
 minetest.register_on_joinplayer(function(player)
-	deserialize_effects(player, player:get_attribute(save_meta_key))
+--	deserialize_effects(player, player:get_attribute(save_meta_key))
 end)
 
 minetest.register_on_leaveplayer(function(player)
@@ -622,29 +655,57 @@ function effects_api.get_effect_by_id(subject, id)
 	return data(subject).effects[id]
 end
 
---- dump_effects
--- Dumps all effects affecting a subject into a string
--- @param subject Subject's ObjectRef
--- @returns String describing effects
-function effects_api.dump_effects(subject)
-	local str = ""
-	local data = data(subject)
-	for _, effect in pairs(data.effects) do
-		if str ~= "" then str=str.."\n" end
+-- Hacks
+--------
 
-		str = str..string.format("%s:%d %d%% %.1fs %s",
-			data.string,
-			effect.phase or "",
-			(effect.intensity or 0)*100,
-			effect.elapsed_time or 0,
-			effect.id or "")
-		if effect.impacts then
-			for impact, _ in pairs(effect.impacts) do
-				str=str.." "..impact
+-- Awful hack for integration with other mods dealing with player physics
+
+local physic_impacts =
+	{ jump = 'jump', gravity = 'gravity', speed = 'speed' }
+
+local function set_physics_override(player, table)
+	-- Separate physics managed by impacts from those still managed by
+	-- core api set_physics_override
+	local impacts = {}
+	local physics = {}
+	for physic, impact in pairs(physic_impacts) do
+		if table[physic] then
+			impacts[impact] = table[physic]
+		else
+			physics[physic] = table[physic]
+		end
+	end
+
+	-- If impact managed physics, update or create specific effect
+	if next(impacts, nil) then
+		local effect = effects_api.get_effect_by_id(player, 'core:physics')
+			or Effect:new(player, {	id = 'core:physics' })
+
+		for impact, value in pairs(impacts) do
+			if value == 1 then
+				effect:remove_impact(impact)
+			else
+				effect:add_impact(impact, { value })
 			end
 		end
---			str=str..minetest.serialize(effect)
 	end
-	return str
+
+	-- If core api managed physics, call core api
+	if next(physics, nil) then
+		effects_api.set_physics_override(player, physics)
+	end
+
 end
 
+minetest.register_on_joinplayer(function(player)
+	if effects_api.set_physics_override == nil then
+		print('[effect_api] Hacking Player:set_physics_override')
+		local meta = getmetatable(player)
+		effects_api.set_physics_override = meta.set_physics_override
+		meta.set_physics_override = set_physics_override
+	end
+
+	-- Create effect if there are already physic changes
+	local physics = player:get_physics_override()
+	set_physics_override(player, physics)
+end)

@@ -67,5 +67,17 @@ if minetest.global_exists("armor") then
 			
 			return false
 		end
+
+	-- In case of armor update, inform texture impact that base texture has changed
+	armor:register_on_update(function(player)
+			local data = effects_api.get_storage_for_subject(player)
+			if data.impacts and data.impacts['texture'] then
+				local impact_type = effects_api.get_impact_type('player', 'texture')
+				data.impacts['texture'].vars.initial_textures = nil
+				-- TODO: add impact_type as metatable of impacts?
+				impact_type.update(data.impacts['texture'])
+			end
+		end)
+
 end
 

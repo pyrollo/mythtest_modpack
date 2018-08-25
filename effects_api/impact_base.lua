@@ -23,13 +23,11 @@
 
 effects_api.register_impact_type('player', 'speed', {
 	reset = function(impact, data)
-			impact.subject:set_physics_override(
-				{speed = (data.defaults.speed or 1.0) })
+			effects_api.set_physics_override(impact.subject, {speed = 1.0})
 		end,
 	update = function(impact, data)
-			impact.subject:set_physics_override({
-				speed = (data.defaults.speed or 1.0) *
-					effects_api.multiply_valints(
+			effects_api.set_physics_override(impact.subject, {
+				speed = effects_api.multiply_valints(
 					effects_api.get_valints(impact.params, 1))
 			})
 		end,
@@ -42,13 +40,11 @@ effects_api.register_impact_type('player', 'speed', {
 
 effects_api.register_impact_type('player', 'jump', {
 	reset = function(impact, data)
-			impact.subject:set_physics_override(
-				{jump = (data.defaults.jump or 1.0)})
+			effects_api.set_physics_override(impact.subject, {jump = 1.0})
 		end,
 		update = function(impact, data)
-			impact.subject:set_physics_override({
-				jump = (data.defaults.jump or 1.0) *
-					effects_api.multiply_valints(
+			effects_api.set_physics_override(impact.subject, {
+				jump = effects_api.multiply_valints(
 					effects_api.get_valints(impact.params, 1))
 			})
 		end,
@@ -61,13 +57,11 @@ effects_api.register_impact_type('player', 'jump', {
 
 effects_api.register_impact_type('player', 'gravity', {
 	reset = function(impact, data)
-			impact.subject:set_physics_override({
-				gravity = (data.defaults.jump or 1.0)})
+			effects_api.set_physics_override(impact.subject, {gravity = 1.0})
 		end,
 	update = function(impact, data)
-			impact.subject:set_physics_override({
-				gravity = (data.defaults.gravity or 1.0) *
-					effects_api.multiply_valints(
+			effects_api.set_physics_override(impact.subject, {
+				gravity = effects_api.multiply_valints(
 					effects_api.get_valints(impact.params, 1))
 			})
 		end,

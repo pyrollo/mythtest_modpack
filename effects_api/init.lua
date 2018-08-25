@@ -34,6 +34,7 @@ minetest.register_chatcommand("clear_effects", {
 			player = minetest.get_player_by_name(player_name)
 			local data = effects_api.get_storage_for_subject(player)
 			data.effects = {}
+			data.impacts = {}
 			return true, "Done."
 		end,
 })
