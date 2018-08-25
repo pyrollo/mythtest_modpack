@@ -250,8 +250,6 @@ local stdcolors = {
 -- @param colorspec Can be a standard color name, a 32 bit integer or a table
 -- @returns A {r,g,b,a} table
 function effects_api.color_to_table(colorspec)
-	local colorint
-
 	if type(colorspec) == 'string' then
 		if string.sub(colorspec, 1, 1) == "#" then
 			if string.len(colorspec) == 4 then
@@ -288,9 +286,9 @@ function effects_api.color_to_table(colorspec)
 			if colorspec then 
 				return {
 					a = 0xFF,
-					r = math.floor(colorint / 0x10000 % 0x100),
-					g = math.floor(colorint / 0x100 % 0x100),
-					b = math.floor(colorint % 0x100),
+					r = math.floor(colorspec / 0x10000 % 0x100),
+					g = math.floor(colorspec / 0x100 % 0x100),
+					b = math.floor(colorspec % 0x100),
 				}
 			end
 			return nil

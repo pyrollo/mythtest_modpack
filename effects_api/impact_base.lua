@@ -1,3 +1,20 @@
+--[[
+    effects_api mod for Minetest - Library to add temporary effects.
+    (c) Pierre-Yves Rollo
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+--]]
 
 -- Speed
 --------
@@ -25,7 +42,6 @@ effects_api.register_impact_type('player', 'speed', {
 
 effects_api.register_impact_type('player', 'jump', {
 	reset = function(impact, data)
-			print("jump data default:"..dump(data.defaults))
 			impact.subject:set_physics_override(
 				{jump = (data.defaults.jump or 1.0)})
 		end,
@@ -126,6 +142,71 @@ effects_api.register_impact_type('player', 'daylight', {
 		end,
 })
 
+-- Texture
+----------
+-- Params:
+-- colorize - Colorize 
+-- opacity - Opacity [0..1]
+
+effects_api.register_impact_type({'player', 'mob'}, 'texture', {
+	vars = { initial_textures = nil },
+
+	reset = function(impact)
+			if impact.vars.initial_textures then
+				default.player_set_textures(impact.subject, 
+					impact.vars.initial_textures)
+				impact.vars.initial_textures = nil
+			end
+			impact.subject:settexturemod("")
+		end,
+
+	update = function(impact)
+			local data = effects_api.get_storage_for_subject(impact.subject)
+			local modifier = ""
+			local color
+
+			for _, param in pairs(impact.params) do
+				if param.colorize and param.intensity then
+					color = effects_api.color_to_table(param.colorize)
+					color.a = color.a * param.intensity
+					modifier = modifier.."^[colorize:"..
+						effects_api.color_to_rgba_texture(color)
+				end
+			end
+
+			local opacity = effects_api.multiply_valints(
+				effects_api.get_valints(impact.params, "opacity"))
+			
+			if opacity < 1 then
+				-- https://github.com/minetest/minetest/pull/7148
+				-- Alpha textures on entities to be released in Minetest 0.5
+				-- Before 0.5, subject is either fully visible or invisible
+				modifier = modifier.."^[opacity:"..(opacity * 255)
+			end
+
+			if data.type == 'mob' then
+				impact.subject:settexturemod(modifier)
+			end
+
+			if data.type == 'player' then
+				-- TODO:integration with 3d armor texture change
+				local textures = default.player_get_animation(impact.subject).textures
+
+				if textures then
+					if not impact.vars.initial_textures then
+						impact.vars.initial_textures = table.copy(textures)
+					end
+					for key, _ in pairs(textures) do
+						textures[key] = impact.vars.initial_textures[key]
+													..modifier
+					end
+					default.player_set_textures(impact.subject, textures)
+				end
+
+			end
+		end,
+	})
+
 -- Vision (WIP)
 ---------
 -- Params :
@@ -144,7 +225,7 @@ effects_api.register_impact_type('player', 'vision', {
 				effects_api.get_valints(impact.params, 1))
 			if vision > 1 then vision = 1 end
 			local text = "effect_black_pixel.png^[colorize:#000000^[opacity:"..
-				math.ceil(255-vision*255) --^[colorize:#000000:255^
+				math.ceil(255-vision*255)
 			if impact.vars.hudid then
 				impact.subject:hud_change(impact.vars.hudid, 'text', text) 
 			else
@@ -159,73 +240,4 @@ effects_api.register_impact_type('player', 'vision', {
 		end,
 })
 
--- Texture (WIP)
-----------
--- Params:
--- 1-Colorize 
--- 2-Opacity [0..1]
 
--- TODO:Texture problems with players and 3d armor and with mobs redo chickens
-
-effects_api.register_impact_type({'player', 'mob'}, 'texture', {
-	vars = { initial_textures = nil },
-	reset = function(impact)
-			if impact.vars.initial_textures then
-				impact.subject:set_properties({ 
-					textures = impact.vars.initial_textures })
-				impact.vars.initial_textures = nil
-			end
-		end,
-	update = function(impact)
-
-			local modifier = ""
-			local color = effects_api.superpose_color_valints(
-					effects_api.get_valints(impact.params, 1))
-			for _, param in pairs(impact.params) do
-				if param.colorize and param.intensity then
-					color = effects_api.color_to_table(param.colorize)
-					color.a = color.a * param.intensity
-					modifier = modifier.."^[colorize:"..
-						effects_api.color_to_rgba_texture(color)
-				end
-			end
-
-			local props = impact.subject:get_properties()
-			if props.textures then
-				if not impact.vars.initial_textures then
-					impact.vars.initial_textures = table.copy(props.textures)
-				end
-				for key, _ in pairs(props.textures) do
-					props.textures[key] = impact.vars.initial_textures[key]
-						..modifier
---						props.textures[key] = value.."^[opacity:128" -- invisible
---						props.textures[key] = value.."^[opacity:129" -- visible
--- https://github.com/minetest/minetest/pull/7148 
--- Alpha textures on entities to be released in Minetest 0.5
-				end
-				impact.subject:set_properties(props)
-			end
-		end,
-	})
-	
-	
---[[ Notes
-    player:set_properties({object property table}) 
-    
-{
-    hp_max = 1,
-    physical = true,
-    weight = 5,
-    collisionbox = {-0.5,-0.5,-0.5, 0.5,0.5,0.5},
-    visual = "cube"/"sprite"/"upright_sprite"/"mesh"/"wielditem",
-    visual_size = {x=1, y=1},
-    mesh = "model",
-    textures = {}, -- number of required textures depends on visual
-    colors = {}, -- number of required colors depends on visual
-    spritediv = {x=1, y=1},
-    initial_sprite_basepos = {x=0, y=0},
-    is_visible = true,
-    makes_footstep_sound = false,
-    automatic_rotate = false,
-}    
---]]

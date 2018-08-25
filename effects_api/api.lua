@@ -20,7 +20,16 @@
 --------------------
 
 -- Name of the players meta in which is saved effects data
-local meta_key = "effects_api:active_effects"
+local save_meta_key = "effects_api:active_effects"
+
+-- Interval in seconds at which effects data is saved into players meta (only 
+-- usefull in case of abdnormal server termination)
+-- TODO:Move into a mod settings
+local save_interval = 1
+
+-- Interval in seconds of ABM checking for subjects being near nodes with effect
+-- TODO:Move into a mod settings
+local abm_interval = 1
 
 -- Effect phases
 ----------------
@@ -54,75 +63,6 @@ local function calliffunc(fct, ...)
 	end
 end
 
--- Impact registry
-------------------
-
-local impact_types = { player = {}, mob = {} }
-
---- register_impact_type
--- Registers a player impact type.
--- @param subjects Subject type or table of subjects type affected by the impact
--- @param name Unique (for a subject type) name of the impact
--- @param def Definition of the impact type
--- def = {
---	vars = { a=1, b=2, ... }       Internal variables needed by the impact (per
---                                 impact context : player / mob)
---	reset = function(impact)       Function called when impact stops
---	update = function(impact)      Function called to apply effect
---	step = function(impact, dtime) Function called every global step
---}
--- Impact passed to functions is:
--- impact = {
---  subject = player or mob ObjectRef
--- 	name = '...',         Impact type name.
---  vars = {},            Internal vars (indexed by name).
--- 	params = {},          Table of per effect params and intensity.
---	changed = true/false  Indicates wether the impact has changed or not since
---                        last step.
--- }
-function effects_api.register_impact_type(subjects, name, definition)
-	if type(subjects) == 'string' then subjects = { subjects } end
-	if type(subjects) ~= 'table' then
-		error ('[effects_api] Subjects is expected to be either a string or '..
-		       'a table of subject type names)', 2)
-	end
-
-	for _, subject in ipairs(subjects) do
-
-		if impact_types[subject] == nil then
-			error ('[effects_api] Subject type "'..subject..'" unknown.', 2)
-		end
-
-		if impact_types[subject][name] then
-			error ('Impact type "'..name..'" already registered for '..
-				subject..'.', 2)
-		end
-
-		local def = table.copy(definition)
-		def.name = name
-		def.subject = subject
-		impact_types[subject][name] = def
-	end
-end
-
---- get_impact_type
--- Retrieves an impact type definition
--- @param subject Subject type to be affected
--- @param name Name of the impact type
--- @returns Impact type definition table
-function effects_api.get_impact_type(subject, name)
-	if impact_types[subject] == nil then
-		error('[effects_api] Subject type "'..subject..'" unknown.', 2)
-	end
-
-	if impact_types[subject][name] == nil then
-		minetest.log('error', '[effects_api] Impact type "'..name
-			..'" not registered for '..subject..'.')
-	end
-
-	return impact_types[subject][name]
-end
-
 -- Subjects
 -----------
 
@@ -140,12 +80,12 @@ local function data(subject)
 	if subject.is_player and subject:is_player() then
 		subject_type = 'player'
 		subject_desc = 'Player "'..subject:get_player_name()..'"'
-	end
-
-	local entity = subject:get_luaentity()
-	if entity and entity.type then
-		subject_type = 'mob'
-		subject_desc = 'Mob "'..entity.name..'"'
+	elseif subject.get_luaentity then
+		local entity = subject:get_luaentity()
+		if entity and entity.type then
+			subject_type = 'mob'
+			subject_desc = 'Mob "'..entity.name..'"'
+		end
 	end
 
 	if subject_type then
@@ -158,7 +98,88 @@ local function data(subject)
 	return subject_data[subject]
 end
 
+-- Explose data function to API
 effects_api.get_storage_for_subject = data
+
+-- Item effects
+---------------
+
+function effects_api.set_equip_effect(subject, item_name)
+	local definition = minetest.registered_items[item_name] and
+		minetest.registered_items[item_name].effect_equip or nil
+	if definition then
+		definition.id = 'equip:'..item_name
+
+		local effect = effects_api.get_effect_by_id(subject, definition.id)
+		if effect == nil then
+			effect = effects_api.new_effect(subject, definition)
+			effect:set_conditions({ equiped_with = item_name })
+			effect:start()
+		end
+		-- Restart effect in case it was in fall phase
+		effect:restart()
+	end
+end
+
+function effects_api.on_use_tool_callback(itemstack, user, pointed_thing)
+	local def = minetest.registered_items[itemstack:get_name()]
+
+	if def then
+		if def.effect_use_on and pointed_thing.type == "object" then
+		--TODO: if using Id, should restart existing item
+			effects_api.new_effect(pointed_thing.ref, def.effect_use_on)
+		end
+		if def.effect_use then
+			effects_api.new_effect(user, def.effect_use)
+		end
+	end
+end
+
+-- Node effects
+---------------
+
+-- ABM to detect if player gets nearby a nodes with effect (belonging to 
+-- group:effect_trigger and having an effect in node definition)
+
+minetest.register_abm({
+	label = "effects_api player detection",
+	nodenames="group:effect_trigger",
+	interval=abm_interval,
+	chance=1,
+	catch_up=true,
+	action = function(pos, node)
+		local ndef = minetest.registered_nodes[node.name]
+		local effect_def = ndef.effect_near
+
+		if effect_def and effect_def.distance then
+
+			for _, subject in pairs(minetest.get_objects_inside_radius(
+					pos, effect_def.distance)) do
+
+				effect_def.id = 'near:'..node.name
+
+				local effect = effects_api.get_effect_by_id(subject, effect_def.id)
+
+				if effect == nil then
+					effect = effects_api.new_effect(subject, effect_def)
+					if effect == nil then return end
+					effect:set_conditions({ near_node = {
+						node_name = node.name,
+						radius = effect_def.distance,
+						active_pos = {}
+					} } )
+				end
+
+				-- Register node position as an active position
+				effect.conditions.near_node
+					.active_pos[minetest.hash_node_position(pos)] = true
+
+				-- Restart effect in case it was in fall phase
+				effect:restart()
+			end
+		end
+	end,
+})
 
 -- Effect object
 ----------------
@@ -166,13 +187,40 @@ effects_api.get_storage_for_subject = data
 local Effect = {}
 Effect.__index = Effect
 
-function Effect:new(subject, fields)
+--- new
+-- Creates an effect and affects it to a subject
+-- @param subject Subject to be affected (player, mob or world)
+-- @param effect_definition Definition of the effect
+-- @return effect affecting the player
+--
+-- effect_definition = {
+--	groups = {},  -- Permet d'agir de l'exterieur sur l'effet
+--	impacts = {}, -- Impacts effect has (pair of impact name / impact parameters
+--	raise = x,    -- Time it takes in seconds to raise to its full intensity
+--	fall = x,     -- Time it takes to fall, after end to no intensity
+--  duration = x, -- Duration of maximum intensity in seconds (default always)
+--  distance = x, -- In case of effect associated to a node, distance of action
+--	stopondeath = true, --?
+--}
+-- impacts = { impactname = parameter, impactname2 = { param1, param2 }, ... }
+
+function Effect:new(subject, definition)
+	-- Verify subject
 	local data = data(subject)
 	if data == nil then return nil end
 
-	self = table.copy(fields)
+	-- Check for existing ID
+	if definition.id and data.effects[definition.id] then
+		minetest.log('error', '[effects_api] Effect ID "'..definition.id..
+			'" already exists for '..data.string..'.')
+		return nil
+	end
+
+	-- Instanciation
+	self = table.copy(definition)
 	setmetatable(self, Effect)
 
+	-- Default values
 	self.elapsed_time = self.elapsed_time or 0
 	self.intensity = self.intensity or 0
 	self.phase = self.phase or phase_raise
@@ -228,6 +276,11 @@ function Effect:new(subject, fields)
 		end
 	end
 	return self
+end
+
+-- Explose new method to API
+function effects_api.new_effect(...)
+	return Effect:new(...)
 end
 
 -- TODO: Clip value to 0-1
@@ -398,7 +451,8 @@ function Effect:check_conditions()
 	return true
 end
 
-function effects_api.on_dieplayer(player)
+-- On die player : stop effects that are marked stopondeath = true
+minetest.register_on_dieplayer(function(player)
 	local data = data(player)
 	if data then
 		for index, effect in pairs(data.effects) do
@@ -407,71 +461,82 @@ function effects_api.on_dieplayer(player)
 			end
 		end
 	end
-end
+end)
 
 -- TODO:
 --- cancel_player_effects
 -- Cancels all effects belonging to a group affecting a player
 --function effects_api.cancel_player_effects(player_name, effect_group)
 
--- Main loop
-------------
+-- Main globalstep loop
+-----------------------
 
-function effects_api.step(dtime)
+minetest.register_globalstep(function(dtime)
+		-- Loop over all known subjects
+		for subject, data in pairs(subject_data) do
 
-	for subject, data in pairs(subject_data) do
-		-- Check subject existence
-		if subject:get_properties() == nil then
-			print("Removing data for "..data.string..".")
-			subject_data[subject] = nil
-		else
-			-- Effects
-			for index, effect in pairs(data.effects) do
-				-- Compute effect elapsed_time, phase and intensity
-				effect:step(dtime)
+			-- Check subject existence
+			if subject:get_properties() == nil then
+				subject_data[subject] = nil
+			else
+				-- Wield item change check
+				-- TODO: work only if subject is known, what about mobs ?
+				local stack = subject:get_wielded_item()
+				local item_name = stack and stack:get_name() or nil
 
-				-- Effect ends ?
-				if effect.phase == phase_end then
-					-- Delete effect
-					data.effects[index] = nil
+				if data.wielded_item ~= item_name then
+					data.wielded_item = item_name
+					if item_name then
+						effects_api.set_equip_effect(subject, item_name)
+					end
 				end
-			end
 
-			-- Impacts
-			for impact_name, impact in pairs(data.impacts) do
-				-- TODO:directly store reference to impact type?
-				local impact_type = effects_api.get_impact_type(
-					data.type, impact_name)
+				-- Effects
+				for index, effect in pairs(data.effects) do
+					-- Compute effect elapsed_time, phase and intensity
+					effect:step(dtime)
 
-				-- Check there are still effects using this impact
-				local remains = false
-				for key, params in pairs(impact.params) do
-					if params.ended then
-						impact.params[key] = nil
+					-- Effect ends ?
+					if effect.phase == phase_end then
+						-- Delete effect
+						data.effects[index] = nil
+					end
+				end
+
+				-- Impacts
+				for impact_name, impact in pairs(data.impacts) do
+					local impact_type = effects_api.get_impact_type(
+						data.type, impact_name)
+
+					-- Check if there are still effects using this impact
+					local remains = false
+					for key, params in pairs(impact.params) do
+						if params.ended then
+							impact.params[key] = nil
+						else
+							remains = true
+						end
+					end
+
+					if remains then
+						-- Update impact if changed (effect intensity changed)
+						if impact.changed then
+							calliffunc(impact_type.update, impact, data)
+						end
+
+						-- Step
+						calliffunc(impact_type.step, impact, dtime, data)
+
+						impact.changed = false
 					else
-						remains = true
+						-- Ends impact
+						calliffunc(impact_type.reset, impact, data)
+						data.impacts[impact_name] = nil
 					end
-				end
-
-				if remains then
-					-- Update impact if changed (effect intensity changed)
-					if impact.changed then
-						calliffunc(impact_type.update, impact, data)
-					end
-
-					-- Step
-					calliffunc(impact_type.step, impact, dtime, data)
-
-					impact.changed = false
-				else
-					-- Ends impact
-					calliffunc(impact_type.reset, impact, data)
-					data.impacts[impact_name] = nil
 				end
 			end
 		end
-	end
-end
+	end)
 
 -- Effects persistance
 ----------------------
@@ -487,7 +552,8 @@ end
 -- TODO:Check that attributes are saved in case of server crash
 -- TODO:Manage entity persistance with get_staticdata and on_activate
 
-function effects_api.serialize_effects(subject)
+-- serialize_effects
+function serialize_effects(subject)
 	local data = data(subject)
 	if not data then return end -- Not a suitable subject
 
@@ -499,7 +565,8 @@ function effects_api.serialize_effects(subject)
 	return minetest.serialize(effects)
 end
 
-function effects_api.deserialize_effects(subject, serialized)
+-- deserialize_effects
+function deserialize_effects(subject, serialized)
 	if serialized == "" then return end
 
 	local data = data(subject)
@@ -520,69 +587,31 @@ function effects_api.deserialize_effects(subject, serialized)
 	end
 end
 
-function effects_api.save_player_data(player)
-	player:set_attribute(meta_key, effects_api.serialize_effects(player))
-end
 
-function effects_api.load_player_data(player)
-	effects_api.deserialize_effects(player, player:get_attribute(meta_key))
-end
-
-function effects_api.save_all_players_data()
+local function periodic_save()
 	for _,player in ipairs(minetest.get_connected_players()) do
-		effects_api.save_player_data(player)
+		player:set_attribute(save_meta_key, serialize_effects(player))
 	end
+	minetest.after(save_interval, periodic_save)
 end
+minetest.after(save_interval, periodic_save)
+
+minetest.register_on_joinplayer(function(player)
+	deserialize_effects(player, player:get_attribute(save_meta_key))
+end)
+
+minetest.register_on_leaveplayer(function(player)
+	player:set_attribute(save_meta_key, serialize_effects(player))
+end)
+
+minetest.register_on_shutdown(function()
+	for _,player in ipairs(minetest.get_connected_players()) do
+		player:set_attribute(save_meta_key, serialize_effects(player))
+	end
+end)
 
 -- Effects management
 ---------------------
-
---- new
--- Creates an effect and affects it to a subject
--- @param subject Subject to be affected (player, mob or world)
--- @param effect_definition Definition of the effect
--- @return effect affecting the player
--- effect_definition = {
---	groups = {},  -- Permet d'agir de l'exterieur sur l'effet
---	impacts = {}, -- Impacts effect has (pair of impact name / impact parameters
---	raise = x,    -- Time it takes in seconds to raise to its full intensity
---	fall = x,     -- Time it takes to fall, after end to no intensity
---  duration = x, -- Duration of maximum intensity in seconds (default always)
---  distance = x, -- In case of effect associated to a node, distance of action
---	stopondeath = true, --?
---}
---
--- impacts = { impactname = parameter, impactname2 = { param1, param2 }, ... }
---
-
---	conditions = { -- created programmatically
---	  duration = x, -- Duration of maximum intensity in seconds (default always)
---	  equiped_with = itemstring, -- Effects falls if not equiped with this item
---                                  anymore (armor or wielding)
--- 	  near_node = {
---	     pos = { x =, y =, z = },
---       radius = ,
---	     node_name = , -- (optional) Node name if any (if node is not corresponding, effect stops)
---},
---}
-
-function effects_api.affect(subject, definition)
-
-	-- Verify subject
-	local data = data(subject) 
-	if not data then return nil end
-
-	-- verify ID
-	if definition.id and data.effects[definition.id] then
-		minetest.log('error', '[effects_api] Effect ID "'..definition.id..
-			'" already exists for '..data.string..'.')
-		return nil
-	end
-
-	-- Instanciation
-	local effect = Effect:new(subject, definition)
-	return effect
-end
 
 --- get_effect_by_id
 -- Retrieves an effect by its ID for a given subject

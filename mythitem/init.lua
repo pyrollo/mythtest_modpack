@@ -29,13 +29,13 @@ minetest.register_tool("mythitem:ring2", {
 })
 
 minetest.register_tool("mythitem:ring3", {
-	description = "Strange ring",
+	description = "Invisibility ring",
 	inventory_image = "mythitem_ring_gem.png",
 	groups = { armor_finger = 1 },
 	texture = "mythitem_transparent", 
 	preview = "mythitem_ring_armor_preview",
 	effect_equip = {
-		impacts = { texture=1 },
+		impacts = { texture={ opacity = 0 } },
 	}
 })
 
@@ -140,7 +140,7 @@ minetest.register_tool("mythitem:wand", {
 		raise = 1,
 		fall = 1,
 		duration = 10,
-		impacts = { texture = { colorize = "#00FF0080" }, damage = { -10, 1 } },
+		impacts = { texture = { colorize = "#00FF0080" } },
 		id = 'use_on:mythitem:wand',
 	},
 	on_use = effects_api.on_use_tool_callback,
